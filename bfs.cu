@@ -7,6 +7,8 @@
 
 extern "C" {
 
+  /* Standard parallel BFS using scan
+  */
   __global__
   void nextLayer(int level, int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int *d_distance, int *d_parent,
                 int queueSize, int *d_currentQueue) {
@@ -120,5 +122,14 @@ extern "C" {
       }
   }
 
+  /*************************************************************
+   * Augmented BFS
+  */
+
+  __global__
+  void initTagList(int *d_adjacencyList, int *d_IDtagList) {
+    int thid = blockIdx.x * blockDim.x + threadIdx.x;
+    
+  }
  
 }
