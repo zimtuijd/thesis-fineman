@@ -8,6 +8,10 @@
 #include <cuda.h>
 #include <chrono>
 #include <cmath>
+
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+
 #include "digraph.h"
 
 CUdevice cuDevice;
@@ -75,7 +79,6 @@ void initCuda(Digraph &G) {
   checkError(cuMemcpyHtoD(d_edgesSize, G.edgesSize.data(), G.numVertices * sizeof(int)),
               "cannot copy to d_edgesSize");
 
-
 }
 
 void checkOutput(std::vector<int> &distance, std::vector<int> &expectedDistance, Digraph &G) {
@@ -90,22 +93,32 @@ void checkOutput(std::vector<int> &distance, std::vector<int> &expectedDistance,
   printf("Output OK!\n\n");
 }
 
-void initializeCudaBfs(int startVertex, std::vector<int> &distance, std::vector<int> &parent, Digraph &G) {
+void initializeCudaBfs(int startVertex, std::vector<int> &distance, std::vector<int> &parent, Digraph &G,
+                       thrust::device_vector<int> &dv_distance,
+                       thrust::device_vector<int> &dv_parent,
+                       thrust::device_vector<int> &dv_degrees) {
   //initialize values
   std::fill(distance.begin(), distance.end(), std::numeric_limits<int>::max());
   std::fill(parent.begin(), parent.end(), std::numeric_limits<int>::max());
   distance[startVertex] = 0;
   parent[startVertex] = 0;
 
-  checkError(cuMemcpyHtoD(d_distance, distance.data(), G.numVertices * sizeof(int)),
+  /*checkError(cuMemcpyHtoD(d_distance, distance.data(), G.numVertices * sizeof(int)),
               "cannot copy to d)distance");
   checkError(cuMemcpyHtoD(d_parent, parent.data(), G.numVertices * sizeof(int)),
               "cannot copy to d_parent");
+  */
+
+  dv_distance = distance;
+  dv_parent = parent;
 
   int firstElementQueue = startVertex;
-  cuMemcpyHtoD(d_currentQueue, &firstElementQueue, sizeof(int));
-}
+  //cuMemcpyHtoD(d_currentQueue, &firstElementQueue, sizeof(int));
+  std::vector<int> temp_degrees(1, firstElementQueue);
+  dv_degrees = temp_degrees;
 
+}
+/*
 void initializeCudaBfsAug(std::vector<int> &startVertices, std::vector<int> &distance,
                           std::vector<int> &parent, std::vector<int> &IDtagList, Digraph &G) {
   //initialize values
@@ -122,9 +135,7 @@ void initializeCudaBfsAug(std::vector<int> &startVertices, std::vector<int> &dis
               "cannot copy to d_parent");
 
   // Copy nodes to frontier
-  for (auto v : startVertices) {
-    cuMemcpyHtoD(d_currentQueue, &v, sizeof(int));
-  }
+  cuMemcpyHtoD(d_currentQueue, startVertices.data(), startVertices.size() * sizeof(int));
 
   // Init the ID tag list
   for (auto v : startVertices) {
@@ -136,15 +147,16 @@ void initializeCudaBfsAug(std::vector<int> &startVertices, std::vector<int> &dis
                           std::ceil(std::log(G.numVertices)) * G.numVertices * sizeof(int)),
                           "cannot copy to d_IDtagList");
 
-}
+}*/
 
 void finalizeCudaBfs(std::vector<int> &distance, std::vector<int> &parent, Digraph &G) {
   //copy memory from device
   checkError(cuMemcpyDtoH(distance.data(), d_distance, G.numVertices * sizeof(int)),
               "cannot copy d_distance to host");
   checkError(cuMemcpyDtoH(parent.data(), d_parent, G.numVertices * sizeof(int)), "cannot copy d_parent to host");
-}
 
+}
+/*
 void finalizeCudaBfsAug(std::vector<int> &distance, std::vector<int> &parent,
                         std::vector<int> &IDtagList, Digraph &G) {
   //copy memory from device
@@ -154,7 +166,7 @@ void finalizeCudaBfsAug(std::vector<int> &distance, std::vector<int> &parent,
   checkError(cuMemcpyDtoH(IDtagList.data(), d_IDtagList,
              std::ceil(std::log(G.numVertices)) * G.numVertices * sizeof(int)), "cannot copy d_IDtagList to host");
 }
-
+*/
 void finalizeCuda() {
   //free memory
   checkError(cuMemFree(d_adjacencyList), "cannot free memory for d_adjacencyList");
@@ -198,6 +210,11 @@ void scanDegrees(int queueSize) {
   for (int i = 1024; i < queueSize + 1024; i += 1024) {
       incrDegrees[i / 1024] += incrDegrees[i / 1024 - 1];
   }
+
+  /*for (auto i = 0; i < incrDegrees.size(); i++) {
+    std::cout << incrDegrees[i] << " ";
+  }
+  std::cout << "\n";*/
 }
 
 void assignVerticesNextQueue(int queueSize, int nextQueueSize) {
@@ -210,8 +227,18 @@ void assignVerticesNextQueue(int queueSize, int nextQueueSize) {
 }
 
 void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
-                std::vector<int> &parent, int numVertices) {
-  initializeCudaBfs(startVertex, distance, parent, G);
+                std::vector<int> &parent, int numVertices,
+                thrust::device_vector<int> &dv_adjacencyList,
+                thrust::device_vector<int> &dv_edgesOffset,
+                thrust::device_vector<int> &dv_edgesSize,
+                thrust::device_vector<int> &dv_distance,
+                thrust::device_vector<int> &dv_parent,
+                thrust::device_vector<int> &dv_currentQueue,
+                thrust::device_vector<int> &dv_nextQueue,
+                thrust::device_vector<int> &dv_degrees) {
+  
+  initializeCudaBfs(startVertex, distance, parent, G,
+                    dv_distance, dv_parent, dv_degrees);
 
   //launch kernel
   printf("Starting standards parallel bfs.\n");
@@ -255,7 +282,7 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
 
   finalizeCudaBfs(distance, parent, G);
 }
-
+/*
 void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> &distance,
                    std::vector<int> &parent, std::vector<int> &IDtagList, int numVertices) {
 
@@ -291,7 +318,7 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> 
 
   finalizeCudaBfs(distance, parent, G);
 
-}
+}*/
 
 int main(int argc, char** argv) {
 
@@ -302,18 +329,32 @@ int main(int argc, char** argv) {
   printf("Number of vertices %d\n", G.numVertices);
   printf("Number of edges %d\n\n", G.numEdges);
 
-  //vectors for results
+  // device vectors for kernels
+  thrust::device_vector<int> dv_adjacencyList;
+  thrust::device_vector<int> dv_edgesOffset;
+  thrust::device_vector<int> dv_edgesSize;
+  thrust::device_vector<int> dv_distance;
+  thrust::device_vector<int> dv_parent;
+  thrust::device_vector<int> dv_currentQueue;
+  thrust::device_vector<int> dv_nextQueue;
+  thrust::device_vector<int> dv_degrees;
+
+  thrust::device_vector<int> dv_IDtagList;
+
+  // vectors for results
   std::vector<int> distance(G.numVertices, std::numeric_limits<int>::max());
   std::vector<int> parent(G.numVertices, std::numeric_limits<int>::max());
 
   initCuda(G);
 
-  runCudaBfs(startVertex, G, distance, parent, G.numVertices);
+  runCudaBfs(startVertex, G, distance, parent, G.numVertices,
+             dv_adjacencyList, dv_edgesOffset, dv_edgesSize, dv_distance,
+             dv_parent, dv_currentQueue, dv_nextQueue, dv_degrees);
 
-  std::vector<int> startVertices = {0,1,2,3};
-  std::vector<int> IDtagList(G.numVertices * std::ceil(std::log(G.numVertices)), -1);
+  //std::vector<int> startVertices = {0,1,2,3};
+  //std::vector<int> IDtagList(G.numVertices * std::ceil(std::log(G.numVertices)), -1);
 
-  runCudaBfsAug(startVertices, G, distance, parent, IDtagList, G.numVertices);
+  //runCudaBfsAug(startVertices, G, distance, parent, IDtagList, G.numVertices);
   
   finalizeCuda();
 
