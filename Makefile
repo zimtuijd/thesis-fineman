@@ -11,7 +11,7 @@ NVCC  := $(CUDA_INSTALL_PATH)/bin/nvcc -ccbin $(CXX)
 INCLUDES = -I. -I$(CUDA_INSTALL_PATH)/include
 
 # Libraries
-LIB_CUDA := -L/usr/lib/nvidia-current -lcuda
+LIB_CUDA := -L/usr/lib/nvidia-current -lcuda -lcudart -lcublas
 
 # Options
 NVCCOPTIONS = -arch=sm_86 -ptx -Wno-deprecated-gpu-targets
@@ -22,7 +22,7 @@ NVCCFLAGS += $(COMMONFLAGS) $(NVCCOPTIONS)
 CXXFLAGS += $(CXXOPTIONS) $(COMMONFLAGS)
 CFLAGS += $(COMMONFLAGS)
 
-CUDA_OBJS = bfs.ptx
+CUDA_OBJS = bfs.ptx bfs_kernels.ptx
 OBJS = main.cc.o digraph.cc.o
 TARGET = main
 LINKLINE = $(LINK) -o $(TARGET) $(OBJS) $(LIB_CUDA)
