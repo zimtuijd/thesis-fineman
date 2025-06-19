@@ -39,23 +39,19 @@ void initializeCudaBfs(int startVertex, std::vector<int> &distance, std::vector<
   distance[startVertex] = 0;
   parent[startVertex] = 0;
 
-  /*checkError(cuMemcpyHtoD(d_distance, distance.data(), G.numVertices * sizeof(int)),
-              "cannot copy to d)distance");
-  checkError(cuMemcpyHtoD(d_parent, parent.data(), G.numVertices * sizeof(int)),
-              "cannot copy to d_parent");
-  */
-
   d_distance = distance;
   d_parent = parent;
 
-  int firstElementQueue = startVertex;
-  //cuMemcpyHtoD(d_currentQueue, &firstElementQueue, sizeof(int));
-  thrust::fill_n(d_currentQueue.begin(), 1, firstElementQueue);
+  thrust::fill_n(d_currentQueue.begin(), 1, startVertex);
 
 }
-/*
+
 void initializeCudaBfsAug(std::vector<int> &startVertices, std::vector<int> &distance,
-                          std::vector<int> &parent, std::vector<int> &IDtagList, Digraph &G) {
+                          std::vector<int> &parent, Digraph &G,
+                          thrust::device_vector<int> &d_distance,
+                          thrust::device_vector<int> &d_parent,
+                          thrust::device_vector<int> &d_currentQueue,
+                          thrust::device_vector<int> &d_IDTagList) {
   //initialize values
   std::fill(distance.begin(), distance.end(), std::numeric_limits<int>::max());
   std::fill(parent.begin(), parent.end(), std::numeric_limits<int>::max());
@@ -64,15 +60,14 @@ void initializeCudaBfsAug(std::vector<int> &startVertices, std::vector<int> &dis
     parent[v] = 0;
   }
 
-  checkError(cuMemcpyHtoD(d_distance, distance.data(), G.numVertices * sizeof(int)),
-              "cannot copy to d)distance");
-  checkError(cuMemcpyHtoD(d_parent, parent.data(), G.numVertices * sizeof(int)),
-              "cannot copy to d_parent");
+  d_distance = distance;
+  d_parent = parent;
 
-  // Copy nodes to frontier
-  cuMemcpyHtoD(d_currentQueue, startVertices.data(), startVertices.size() * sizeof(int));
+  // copy starting nodes to frontier
+  thrust::copy(startVertices.begin(), startVertices.end(), d_currentQueue.begin());
 
   // Init the ID tag list
+  /*
   for (auto v : startVertices) {
     int temp = v * std::ceil(std::log(G.numVertices)); 
     IDtagList[temp] = v;
@@ -81,27 +76,9 @@ void initializeCudaBfsAug(std::vector<int> &startVertices, std::vector<int> &dis
   checkError(cuMemcpyHtoD(d_IDtagList, IDtagList.data(), 
                           std::ceil(std::log(G.numVertices)) * G.numVertices * sizeof(int)),
                           "cannot copy to d_IDtagList");
-
-}*/
-
-void finalizeCudaBfs(std::vector<int> &distance, std::vector<int> &parent, Digraph &G) {
-  //copy memory from device
-  /*checkError(cuMemcpyDtoH(distance.data(), d_distance, G.numVertices * sizeof(int)),
-              "cannot copy d_distance to host");
-  checkError(cuMemcpyDtoH(parent.data(), d_parent, G.numVertices * sizeof(int)), "cannot copy d_parent to host");
   */
+
 }
-/*
-void finalizeCudaBfsAug(std::vector<int> &distance, std::vector<int> &parent,
-                        std::vector<int> &IDtagList, Digraph &G) {
-  //copy memory from device
-  checkError(cuMemcpyDtoH(distance.data(), d_distance, G.numVertices * sizeof(int)),
-              "cannot copy d_distance to host");
-  checkError(cuMemcpyDtoH(parent.data(), d_parent, G.numVertices * sizeof(int)), "cannot copy d_parent to host");
-  checkError(cuMemcpyDtoH(IDtagList.data(), d_IDtagList,
-             std::ceil(std::log(G.numVertices)) * G.numVertices * sizeof(int)), "cannot copy d_IDtagList to host");
-}
-*/
 
 void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
                 std::vector<int> &parent, int numVertices,
@@ -118,7 +95,7 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
                     d_distance, d_parent, d_currentQueue);
 
   //launch kernel
-  printf("Starting standards parallel bfs.\n");
+  printf("Starting standard parallel bfs.\n");
   auto start = std::chrono::steady_clock::now();
 
   int queueSize = 1;
@@ -154,21 +131,8 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
                   queueSize,
                   thrust::raw_pointer_cast(d_currentQueue.data()),
                   thrust::raw_pointer_cast(d_degrees.data()));
+      
       // doing scan on degrees
-      /*scanDegrees<<<queueSize / 1024 + 1, 1024>>>
-                  (queueSize,
-                  thrust::raw_pointer_cast(d_degrees.data()),
-                  thrust::raw_pointer_cast(d_incrDegrees.data()));
-
-      //thrust::copy(d_incrDegrees.begin(), d_incrDegrees.end(), incrDegrees.begin());
-      int* incrDegrees = thrust::raw_pointer_cast(d_incrDegrees.data());
-      incrDegrees[0] = 0;
-      for (int i = 1024; i < queueSize + 1024; i += 1024) {
-          incrDegrees[i / 1024] += incrDegrees[i / 1024 - 1];
-      }
-      nextQueueSize = incrDegrees[(queueSize - 1) / 1024 + 1];
-      //d_incrDegrees = incrDegrees;*/
-
       thrust::inclusive_scan(d_degrees.begin(), d_degrees.end(), d_degrees.begin());
       nextQueueSize = d_degrees.back();
 
@@ -182,7 +146,6 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
                                thrust::raw_pointer_cast(d_currentQueue.data()),
                                thrust::raw_pointer_cast(d_nextQueue.data()),
                                thrust::raw_pointer_cast(d_degrees.data()),
-                               //thrust::raw_pointer_cast(d_incrDegrees.data()),
                                nextQueueSize);
 
       level++;
@@ -198,15 +161,25 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
     printf("Did not reach end.\n");
   }
   
-  std::cout << "\n" << level << " " << maxLevel << "\n";
+  //std::cout << "\n" << level << " " << maxLevel << "\n";
 
-  finalizeCudaBfs(distance, parent, G);
+  // TODO: kopieer d_parent en d_distance naar host
 }
-/*
-void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> &distance,
-                   std::vector<int> &parent, std::vector<int> &IDtagList, int numVertices) {
 
-  initializeCudaBfsAug(startVertices, distance, parent, IDtagList, G);
+void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> &distance,
+                std::vector<int> &parent, int numVertices,
+                thrust::device_vector<int> &d_adjacencyList,
+                thrust::device_vector<int> &d_edgesOffset,
+                thrust::device_vector<int> &d_edgesSize,
+                thrust::device_vector<int> &d_distance,
+                thrust::device_vector<int> &d_parent,
+                thrust::device_vector<int> &d_currentQueue,
+                thrust::device_vector<int> &d_nextQueue,
+                thrust::device_vector<int> &d_degrees,
+                thrust::device_vector<int> &d_IDTagList) {
+
+  initializeCudaBfsAug(startVertices, distance, parent, G,
+                       d_distance, d_parent, d_currentQueue, d_IDTagList);
 
   //launch kernel
   printf("Starting augmented parallel bfs.\n");
@@ -217,28 +190,76 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> 
   int level = 0;
 
   while (queueSize) {
-      // next layer phase
-      nextLayer(level, queueSize);
-      // counting degrees phase
-      countDegrees(level, queueSize);
-      // doing scan on degrees
-      scanDegrees(queueSize);
-      nextQueueSize = incrDegrees[(queueSize - 1) / 1024 + 1];
-      // assigning vertices to nextQueue
-      assignVerticesNextQueue(queueSize, nextQueueSize);
+    
+      thrust::fill(d_degrees.begin(), d_degrees.end(), 0);
 
-      level++;
+      // next layer phase
+      nextLayer<<<queueSize / 1024 + 1, 1024>>>
+                (level,
+                thrust::raw_pointer_cast(d_adjacencyList.data()),
+                thrust::raw_pointer_cast(d_edgesOffset.data()),
+                thrust::raw_pointer_cast(d_edgesSize.data()),
+                thrust::raw_pointer_cast(d_distance.data()),
+                thrust::raw_pointer_cast(d_parent.data()),
+                queueSize,
+                thrust::raw_pointer_cast(d_currentQueue.data()));
+      // counting degrees phase
+      countDegrees<<<queueSize / 1024 + 1, 1024>>>
+                  (thrust::raw_pointer_cast(d_adjacencyList.data()),
+                  thrust::raw_pointer_cast(d_edgesOffset.data()),
+                  thrust::raw_pointer_cast(d_edgesSize.data()),
+                  thrust::raw_pointer_cast(d_parent.data()),
+                  queueSize,
+                  thrust::raw_pointer_cast(d_currentQueue.data()),
+                  thrust::raw_pointer_cast(d_degrees.data()));
+      
+      // doing scan on degrees
+      thrust::inclusive_scan(d_degrees.begin(), d_degrees.end(), d_degrees.begin());
+      nextQueueSize = d_degrees.back();
+
+      // assigning vertices to nextQueue
+      assignVerticesNextQueue<<<queueSize / 1024 + 1, 1024>>>
+                              (thrust::raw_pointer_cast(d_adjacencyList.data()),
+                               thrust::raw_pointer_cast(d_edgesOffset.data()),
+                               thrust::raw_pointer_cast(d_edgesSize.data()),
+                               thrust::raw_pointer_cast(d_parent.data()),
+                               queueSize,
+                               thrust::raw_pointer_cast(d_currentQueue.data()),
+                               thrust::raw_pointer_cast(d_nextQueue.data()),
+                               thrust::raw_pointer_cast(d_degrees.data()),
+                               nextQueueSize);
+
       queueSize = nextQueueSize;
-      std::swap(d_currentQueue, d_nextQueue);
+      d_currentQueue.swap(d_nextQueue);
   }
 
   auto end = std::chrono::steady_clock::now();
   long duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
   printf("Elapsed time in milliseconds : %li ms.\n", duration);
 
-  finalizeCudaBfs(distance, parent, G);
+  // TODO: kopieer d_parent en d_distance naar host
+}
 
-}*/
+void initDevVector(Digraph &G,
+                   thrust::device_vector<int> &d_adjacencyList,
+                   thrust::device_vector<int> &d_edgesOffset,
+                   thrust::device_vector<int> &d_edgesSize,
+                   thrust::device_vector<int> &d_distance,
+                   thrust::device_vector<int> &d_parent,
+                   thrust::device_vector<int> &d_currentQueue,
+                   thrust::device_vector<int> &d_nextQueue,
+                   thrust::device_vector<int> &d_degrees) {
+
+  d_adjacencyList = G.adjacencyList;
+  d_edgesOffset = G.edgesOffset;
+  d_edgesSize = G.edgesSize;
+  thrust::fill(d_distance.begin(), d_distance.end(), 0);
+  thrust::fill(d_parent.begin(), d_parent.end(), 0);
+  thrust::fill(d_currentQueue.begin(), d_currentQueue.end(), 0);
+  thrust::fill(d_nextQueue.begin(), d_nextQueue.end(), 0);
+  thrust::fill(d_degrees.begin(), d_degrees.end(), 0);
+
+}
 
 int startBFS(Digraph &G, int startVertex,
              std::vector<int> &distance, std::vector<int> &parent) {
@@ -253,16 +274,23 @@ int startBFS(Digraph &G, int startVertex,
   thrust::device_vector<int> d_nextQueue(G.numVertices, 0);
   thrust::device_vector<int> d_degrees(G.numVertices, 0);
 
-  thrust::device_vector<int> d_IDtagList;
-
+  // normal BFS
   runCudaBfs(startVertex, G, distance, parent, G.numVertices,
              d_adjacencyList, d_edgesOffset, d_edgesSize, d_distance,
              d_parent, d_currentQueue, d_nextQueue, d_degrees);
 
-  //std::vector<int> startVertices = {0,1,2,3};
-  //std::vector<int> IDtagList(G.numVertices * std::ceil(std::log(G.numVertices)), -1);
 
-  //runCudaBfsAug(startVertices, G, distance, parent, IDtagList, G.numVertices);
+  std::vector<int> startVertices = {0,1,2,3};
+  thrust::device_vector<int> d_IDTagList(G.numVertices * std::ceil(std::log(G.numVertices)), -1);
+
+  initDevVector(G, d_adjacencyList, d_edgesOffset, d_edgesSize, d_distance,
+                d_parent, d_currentQueue, d_nextQueue, d_degrees);
+
+  // augmented BFS
+  runCudaBfsAug(startVertices, G, distance, parent, G.numVertices,
+                d_adjacencyList, d_edgesOffset, d_edgesSize, d_distance,
+                d_parent, d_currentQueue, d_nextQueue, d_degrees,
+                d_IDTagList);
 
   return 0;
 
