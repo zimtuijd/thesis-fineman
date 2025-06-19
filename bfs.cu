@@ -8,9 +8,11 @@
 #include <cuda.h>
 #include <chrono>
 #include <cmath>
+#include <vector>
 
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
+#include <thrust/copy.h>
 
 #include "bfs_kernels.cu"
 #include "digraph.h"
@@ -112,10 +114,12 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
                 thrust::device_vector<int> &d_currentQueue,
                 thrust::device_vector<int> &d_nextQueue,
                 thrust::device_vector<int> &d_degrees,
-                thrust::host_vector<int> &incrDegrees) {
+                thrust::host_vector<int> &zincrDegrees) {
   
   initializeCudaBfs(startVertex, distance, parent, G,
                     d_distance, d_parent, d_degrees);
+  
+  thrust::device_vector<int> d_incrDegrees;// = incrDegrees;
 
   //launch kernel
   printf("Starting standards parallel bfs.\n");
@@ -132,30 +136,60 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
         reachedEnd = false;
         break;
       }
+      
       // next layer phase
-      nextLayer<<<queueSize / 1024 + 1, 1024>>>(level, d_adjacencyList, d_edgesOffset,
-                                                d_edgesSize, d_distance, d_parent, queueSize,
-                                                d_currentQueue);
+      nextLayer<<<queueSize / 1024 + 1, 1024>>>
+                (level,
+                thrust::raw_pointer_cast(d_adjacencyList.data()),
+                thrust::raw_pointer_cast(d_edgesOffset.data()),
+                thrust::raw_pointer_cast(d_edgesSize.data()),
+                thrust::raw_pointer_cast(d_distance.data()),
+                thrust::raw_pointer_cast(d_parent.data()),
+                queueSize,
+                thrust::raw_pointer_cast(d_currentQueue.data()));
       // counting degrees phase
-      countDegrees<<<queueSize / 1024 + 1, 1024>>>(d_adjacencyList, d_edgesOffset, d_edgesSize,
-                                                   d_parent, queueSize, d_currentQueue, d_degrees);
+      countDegrees<<<queueSize / 1024 + 1, 1024>>>
+                  (thrust::raw_pointer_cast(d_adjacencyList.data()),
+                  thrust::raw_pointer_cast(d_edgesOffset.data()),
+                  thrust::raw_pointer_cast(d_edgesSize.data()),
+                  thrust::raw_pointer_cast(d_parent.data()),
+                  queueSize,
+                  thrust::raw_pointer_cast(d_currentQueue.data()),
+                  thrust::raw_pointer_cast(d_degrees.data()));
       // doing scan on degrees
-      scanDegrees<<<queueSize / 1024 + 1, 1024>>>(queueSize, d_degrees, incrDegrees);
+      /*scanDegrees<<<queueSize / 1024 + 1, 1024>>>
+                  (queueSize,
+                  thrust::raw_pointer_cast(d_degrees.data()),
+                  thrust::raw_pointer_cast(d_incrDegrees.data()));
 
+      //thrust::copy(d_incrDegrees.begin(), d_incrDegrees.end(), incrDegrees.begin());
+      int* incrDegrees = thrust::raw_pointer_cast(d_incrDegrees.data());
       incrDegrees[0] = 0;
       for (int i = 1024; i < queueSize + 1024; i += 1024) {
           incrDegrees[i / 1024] += incrDegrees[i / 1024 - 1];
       }
       nextQueueSize = incrDegrees[(queueSize - 1) / 1024 + 1];
+      //d_incrDegrees = incrDegrees;*/
+
+      thrust::inclusive_scan(d_degrees.begin(), d_degrees.end(), d_degrees.begin());
 
       // assigning vertices to nextQueue
       assignVerticesNextQueue<<<queueSize / 1024 + 1, 1024>>>
-                              (d_adjacencyList, d_edgesOffset, d_edgesSize, d_parent, queueSize,
-                               d_currentQueue, d_nextQueue, d_degrees, incrDegrees, nextQueueSize);
+                              (thrust::raw_pointer_cast(d_adjacencyList.data()),
+                               thrust::raw_pointer_cast(d_edgesOffset.data()),
+                               thrust::raw_pointer_cast(d_edgesSize.data()),
+                               thrust::raw_pointer_cast(d_parent.data()),
+                               queueSize,
+                               thrust::raw_pointer_cast(d_currentQueue.data()),
+                               thrust::raw_pointer_cast(d_nextQueue.data()),
+                               thrust::raw_pointer_cast(d_degrees.data()),
+                               //thrust::raw_pointer_cast(d_incrDegrees.data()),
+                               nextQueueSize);
 
       level++;
       queueSize = nextQueueSize;
-      std::swap(d_currentQueue, d_nextQueue);
+      //std::swap(d_currentQueue, d_nextQueue);
+      d_currentQueue.swap(d_nextQueue);
   }
 
 
@@ -212,14 +246,14 @@ int startBFS(Digraph &G, int startVertex,
              std::vector<int> &distance, std::vector<int> &parent) {
 
   // device vectors for kernels
-  thrust::device_vector<int> d_adjacencyList;
-  thrust::device_vector<int> d_edgesOffset;
-  thrust::device_vector<int> d_edgesSize;
-  thrust::device_vector<int> d_distance;
-  thrust::device_vector<int> d_parent;
-  thrust::device_vector<int> d_currentQueue;
-  thrust::device_vector<int> d_nextQueue;
-  thrust::device_vector<int> d_degrees;
+  thrust::device_vector<int> d_adjacencyList(G.adjacencyList);
+  thrust::device_vector<int> d_edgesOffset(G.edgesOffset);
+  thrust::device_vector<int> d_edgesSize(G.edgesSize);
+  thrust::device_vector<int> d_distance(G.numVertices, 0);
+  thrust::device_vector<int> d_parent(G.numVertices, 0);
+  thrust::device_vector<int> d_currentQueue(G.numVertices, 0);
+  thrust::device_vector<int> d_nextQueue(G.numVertices, 0);
+  thrust::device_vector<int> d_degrees(G.numVertices, 0);
 
   thrust::host_vector<int> incrDegrees;
 

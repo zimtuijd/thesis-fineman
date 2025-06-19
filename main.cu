@@ -2,17 +2,8 @@
    main.cc
 */
 
-#include <cstdio>
-#include <iostream>
-#include <string>
-#include <cuda.h>
-#include <chrono>
-#include <cmath>
-
-#include <thrust/host_vector.h>
-
-#include "digraph.h"
 #include "bfs.cu"
+#include <cuda.h>
 
 CUdevice cuDevice;
 CUcontext cuContext;
@@ -28,9 +19,8 @@ void checkError(CUresult error, std::string msg) {
 void initCuda(Digraph &G) {
   //initialize
   cuInit(0);
-  checkError(cuDeviceGet(&cuDevice, 1), "cannot get device 0");
+  checkError(cuDeviceGet(&cuDevice, 0), "cannot get device 0");
   checkError(cuCtxCreate(&cuContext, 0, cuDevice), "cannot create context");
-  checkError(cuModuleLoad(&cuModule, "bfs.ptx"), "cannot load module");
 }
 
 

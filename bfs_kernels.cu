@@ -93,17 +93,16 @@ extern "C" {
 
   __global__
   void assignVerticesNextQueue(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int *d_parent, int queueSize,
-                              int *d_currentQueue, int *d_nextQueue, int *d_degrees, int *incrDegrees,
-                              int nextQueueSize) {
+                              int *d_currentQueue, int *d_nextQueue, int *d_degrees, int nextQueueSize) {
       int thid = blockIdx.x * blockDim.x + threadIdx.x;
 
       if (thid < queueSize) {
-          __shared__ int sharedIncrement;
+          /*__shared__ int sharedIncrement;
           if (!threadIdx.x) {
               sharedIncrement = incrDegrees[thid >> 10];
           }
           __syncthreads();
-
+          */
           int sum = 0;
           if (threadIdx.x) {
               sum = d_degrees[thid - 1];
@@ -114,7 +113,7 @@ extern "C" {
           for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
               int v = d_adjacencyList[i];
               if (d_parent[v] == i && v != u) {
-                  int nextQueuePlace = sharedIncrement + sum + counter;
+                  int nextQueuePlace = sum + counter; // no sharedIncrement
                   d_nextQueue[nextQueuePlace] = v;
                   counter++;
               }
