@@ -2,3 +2,4 @@
 *.ptx
 ./build
 main
+in.txt

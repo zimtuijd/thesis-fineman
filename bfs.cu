@@ -32,7 +32,7 @@ void checkOutput(std::vector<int> &distance, std::vector<int> &expectedDistance,
 void initializeCudaBfs(int startVertex, std::vector<int> &distance, std::vector<int> &parent, Digraph &G,
                        thrust::device_vector<int> &d_distance,
                        thrust::device_vector<int> &d_parent,
-                       thrust::device_vector<int> &d_degrees) {
+                       thrust::device_vector<int> &d_currentQueue) {
   //initialize values
   std::fill(distance.begin(), distance.end(), std::numeric_limits<int>::max());
   std::fill(parent.begin(), parent.end(), std::numeric_limits<int>::max());
@@ -50,8 +50,7 @@ void initializeCudaBfs(int startVertex, std::vector<int> &distance, std::vector<
 
   int firstElementQueue = startVertex;
   //cuMemcpyHtoD(d_currentQueue, &firstElementQueue, sizeof(int));
-  std::vector<int> temp_degrees(1, firstElementQueue);
-  d_degrees = temp_degrees;
+  thrust::fill_n(d_currentQueue.begin(), 1, firstElementQueue);
 
 }
 /*
@@ -113,13 +112,10 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
                 thrust::device_vector<int> &d_parent,
                 thrust::device_vector<int> &d_currentQueue,
                 thrust::device_vector<int> &d_nextQueue,
-                thrust::device_vector<int> &d_degrees,
-                thrust::host_vector<int> &zincrDegrees) {
+                thrust::device_vector<int> &d_degrees) {
   
   initializeCudaBfs(startVertex, distance, parent, G,
-                    d_distance, d_parent, d_degrees);
-  
-  thrust::device_vector<int> d_incrDegrees;// = incrDegrees;
+                    d_distance, d_parent, d_currentQueue);
 
   //launch kernel
   printf("Starting standards parallel bfs.\n");
@@ -136,7 +132,9 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
         reachedEnd = false;
         break;
       }
-      
+
+      thrust::fill(d_degrees.begin(), d_degrees.end(), 0);
+
       // next layer phase
       nextLayer<<<queueSize / 1024 + 1, 1024>>>
                 (level,
@@ -172,6 +170,7 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
       //d_incrDegrees = incrDegrees;*/
 
       thrust::inclusive_scan(d_degrees.begin(), d_degrees.end(), d_degrees.begin());
+      nextQueueSize = d_degrees.back();
 
       // assigning vertices to nextQueue
       assignVerticesNextQueue<<<queueSize / 1024 + 1, 1024>>>
@@ -188,7 +187,6 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
 
       level++;
       queueSize = nextQueueSize;
-      //std::swap(d_currentQueue, d_nextQueue);
       d_currentQueue.swap(d_nextQueue);
   }
 
@@ -200,7 +198,7 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
     printf("Did not reach end.\n");
   }
   
-  std::cout << level << " " << maxLevel << "\n";
+  std::cout << "\n" << level << " " << maxLevel << "\n";
 
   finalizeCudaBfs(distance, parent, G);
 }
@@ -255,13 +253,11 @@ int startBFS(Digraph &G, int startVertex,
   thrust::device_vector<int> d_nextQueue(G.numVertices, 0);
   thrust::device_vector<int> d_degrees(G.numVertices, 0);
 
-  thrust::host_vector<int> incrDegrees;
-
   thrust::device_vector<int> d_IDtagList;
 
   runCudaBfs(startVertex, G, distance, parent, G.numVertices,
              d_adjacencyList, d_edgesOffset, d_edgesSize, d_distance,
-             d_parent, d_currentQueue, d_nextQueue, d_degrees, incrDegrees);
+             d_parent, d_currentQueue, d_nextQueue, d_degrees);
 
   //std::vector<int> startVertices = {0,1,2,3};
   //std::vector<int> IDtagList(G.numVertices * std::ceil(std::log(G.numVertices)), -1);
