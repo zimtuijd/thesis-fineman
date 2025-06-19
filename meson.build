@@ -13,7 +13,9 @@ add_project_arguments(
         '--std=c++20',
         '--expt-relaxed-constexpr',
         '--extended-lambda',
-        language: 'cuda'
+        '-lcuda',
+        '-lcudart',
+        language: 'cuda',
 )
 
-main = executable('main', 'main.cu', 'bfs.cu', 'bfs_kernels.cu', 'digraph.cc')
+main = executable('main', 'main.cu', 'digraph.cc', link_args : '-lcuda')
