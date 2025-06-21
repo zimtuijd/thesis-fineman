@@ -126,9 +126,45 @@ extern "C" {
   */
 
   __global__
-  void initTagList(int *d_adjacencyList, int *d_IDtagList) {
-    int thid = blockIdx.x * blockDim.x + threadIdx.x;
-    
+  void augAssignVNQ(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int *d_parent, int queueSize,
+                    int *d_currentQueue, int *d_nextQueue, int *d_degrees, int nextQueueSize,
+                    int* d_IDTagList, int* d_queueID, int* d_nextQueueID, int IDTagSize) {
+      int thid = blockIdx.x * blockDim.x + threadIdx.x;
+
+      if (thid < queueSize) {
+          int sum = 0;
+          if (threadIdx.x) {
+              sum = d_degrees[thid - 1];
+          }
+
+          int u = d_currentQueue[thid];
+          int u_pivotID = d_queueID[thid]; // current node's pivot ID
+          int counter = 0;
+          bool visitedPivotID = false;
+          for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
+              int v = d_adjacencyList[i];
+              if (d_parent[v] == i && v != u) {
+                  
+                  // scan through d_IDTagList to check if node has been reached by pivot ID yet
+                  for (int tagIdx = IDTagSize * v; tagIdx < IDTagSize * v + IDTagSize; tagIdx++) {
+                    if (d_IDTagList[tagIdx] == u_pivotID) {
+                      visitedPivotID = true;
+                    }
+                  }
+
+                  // if visited by pivot ID, do not add node to queue
+                  if (visitedPivotID) {
+                    visitedPivotID = false;
+                    break;
+                  }
+
+                  int nextQueuePlace = sum + counter;
+                  d_nextQueue[nextQueuePlace] = v;
+                  d_nextQueueID[nextQueuePlace] = u_pivotID; // adds corresponding pivot ID to next queue
+                  counter++;
+              }
+          }
+      }
   }
- 
+
 }
