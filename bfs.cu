@@ -13,9 +13,23 @@
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 #include <thrust/copy.h>
+#include <thrust/scan.h>
+#include <thrust/for_each.h>
 
 #include "bfs_kernels.cu"
 #include "digraph.h"
+
+struct printf_functor
+{
+  __host__ __device__
+  void operator()(int x)
+  {
+    // note that using printf in a __device__ function requires
+    // code compiled for a GPU with compute capability 2.0 or
+    // higher (nvcc --arch=sm_20)
+    printf("%d ", x);
+  }
+};
 
 void checkOutput(std::vector<int> &distance, std::vector<int> &expectedDistance, Digraph &G) {
   for (int i = 0; i < G.numVertices; i++) {
@@ -67,16 +81,18 @@ void initializeCudaBfsAug(std::vector<int> &startVertices, std::vector<int> &dis
   thrust::copy(startVertices.begin(), startVertices.end(), d_currentQueue.begin());
 
   // Init the ID tag list
-  /*
+  // G.numVertices * std::ceil(std::log(G.numVertices) entries in IDTagList
+
+  int numEntries = G.numVertices * std::ceil(std::log(G.numVertices));
+  std::vector<int> tempList(numEntries, -1);
   for (auto v : startVertices) {
     int temp = v * std::ceil(std::log(G.numVertices)); 
-    IDtagList[temp] = v;
+    tempList[temp] = v;
   }
 
-  checkError(cuMemcpyHtoD(d_IDtagList, IDtagList.data(), 
-                          std::ceil(std::log(G.numVertices)) * G.numVertices * sizeof(int)),
-                          "cannot copy to d_IDtagList");
-  */
+  d_IDTagList = tempList;
+
+  //thrust::for_each(d_IDTagList.begin(), d_IDTagList.end(), printf_functor());
 
 }
 
@@ -101,7 +117,7 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
   int queueSize = 1;
   int nextQueueSize = 0;
   int level = 0;
-  int maxLevel = std::ceil(std::pow(std::cbrt(10), 2) * (std::log(numVertices) / std::log(19)));
+  int maxLevel = std::ceil(std::pow(std::cbrt(numVertices), 2) * std::log(numVertices));
   bool reachedEnd = true;
 
   while (queueSize) {
@@ -109,8 +125,6 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
         reachedEnd = false;
         break;
       }
-
-      thrust::fill(d_degrees.begin(), d_degrees.end(), 0);
 
       // next layer phase
       nextLayer<<<queueSize / 1024 + 1, 1024>>>
@@ -133,8 +147,8 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
                   thrust::raw_pointer_cast(d_degrees.data()));
       
       // doing scan on degrees
-      thrust::inclusive_scan(d_degrees.begin(), d_degrees.end(), d_degrees.begin());
-      nextQueueSize = d_degrees.back();
+      thrust::inclusive_scan(d_degrees.begin(), d_degrees.begin() + queueSize, d_degrees.begin());
+      nextQueueSize = d_degrees[queueSize - 1];
 
       // assigning vertices to nextQueue
       assignVerticesNextQueue<<<queueSize / 1024 + 1, 1024>>>
@@ -161,7 +175,7 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
     printf("Did not reach end.\n");
   }
   
-  //std::cout << "\n" << level << " " << maxLevel << "\n";
+  std::cout << "\n" << level << " " << maxLevel << "\n";
 
   // TODO: kopieer d_parent en d_distance naar host
 }
@@ -191,8 +205,6 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> 
 
   while (queueSize) {
     
-      thrust::fill(d_degrees.begin(), d_degrees.end(), 0);
-
       // next layer phase
       nextLayer<<<queueSize / 1024 + 1, 1024>>>
                 (level,
@@ -214,8 +226,8 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> 
                   thrust::raw_pointer_cast(d_degrees.data()));
       
       // doing scan on degrees
-      thrust::inclusive_scan(d_degrees.begin(), d_degrees.end(), d_degrees.begin());
-      nextQueueSize = d_degrees.back();
+      thrust::inclusive_scan(d_degrees.begin(), d_degrees.begin() + queueSize, d_degrees.begin());
+      nextQueueSize = d_degrees[queueSize - 1];
 
       // assigning vertices to nextQueue
       assignVerticesNextQueue<<<queueSize / 1024 + 1, 1024>>>
@@ -228,6 +240,9 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> 
                                thrust::raw_pointer_cast(d_nextQueue.data()),
                                thrust::raw_pointer_cast(d_degrees.data()),
                                nextQueueSize);
+      
+      thrust::for_each(d_currentQueue.begin(), d_currentQueue.end(), printf_functor());
+      std::cout << "\n";
 
       queueSize = nextQueueSize;
       d_currentQueue.swap(d_nextQueue);
@@ -281,7 +296,7 @@ int startBFS(Digraph &G, int startVertex,
 
 
   std::vector<int> startVertices = {0,1,2,3};
-  thrust::device_vector<int> d_IDTagList(G.numVertices * std::ceil(std::log(G.numVertices)), -1);
+  thrust::device_vector<int> d_IDTagList(G.numVertices * std::ceil(std::log(G.numVertices)));
 
   initDevVector(G, d_adjacencyList, d_edgesOffset, d_edgesSize, d_distance,
                 d_parent, d_currentQueue, d_nextQueue, d_degrees);
