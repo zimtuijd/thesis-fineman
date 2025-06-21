@@ -126,10 +126,49 @@ extern "C" {
   */
 
   __global__
+  void augNextLayer(int level, int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int *d_distance, int *d_parent,
+                    int queueSize, int *d_currentQueue) {
+      int thid = blockIdx.x * blockDim.x + threadIdx.x;
+      // TODO: include multiple parents per node?
+
+      if (thid < queueSize) {
+          int u = d_currentQueue[thid];
+          for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
+              int v = d_adjacencyList[i];
+              if (level + 1 < d_distance[v]) {
+                  d_distance[v] = level + 1;
+                  d_parent[v] = i;
+              }
+          }
+      }
+  }
+
+    __global__
+  void augCountDegrees(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int *d_parent,
+                       int queueSize, int *d_currentQueue, int *d_degrees) {
+      int thid = blockIdx.x * blockDim.x + threadIdx.x;
+      //TODO: multiple parent? change d_parent
+
+      if (thid < queueSize) {
+          int u = d_currentQueue[thid];
+          int degree = 0;
+          for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
+              int v = d_adjacencyList[i];
+              if (d_parent[v] == i && v != u) {
+                  ++degree;
+              }
+          }
+          d_degrees[thid] = degree;
+      }
+  }
+
+  __global__
   void augAssignVNQ(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int *d_parent, int queueSize,
                     int *d_currentQueue, int *d_nextQueue, int *d_degrees, int nextQueueSize,
                     int* d_IDTagList, int* d_queueID, int* d_nextQueueID, int IDTagSize) {
       int thid = blockIdx.x * blockDim.x + threadIdx.x;
+
+      // TODO: change duplication removal to also include pivot ID, maybe even remove it?
 
       if (thid < queueSize) {
           int sum = 0;

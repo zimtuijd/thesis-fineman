@@ -215,24 +215,24 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> 
   while (queueSize) {
     
       // next layer phase
-      nextLayer<<<queueSize / 1024 + 1, 1024>>>
-                (level,
-                thrust::raw_pointer_cast(d_adjacencyList.data()),
-                thrust::raw_pointer_cast(d_edgesOffset.data()),
-                thrust::raw_pointer_cast(d_edgesSize.data()),
-                thrust::raw_pointer_cast(d_distance.data()),
-                thrust::raw_pointer_cast(d_parent.data()),
-                queueSize,
-                thrust::raw_pointer_cast(d_currentQueue.data()));
+      augNextLayer<<<queueSize / 1024 + 1, 1024>>>
+                    (level,
+                    thrust::raw_pointer_cast(d_adjacencyList.data()),
+                    thrust::raw_pointer_cast(d_edgesOffset.data()),
+                    thrust::raw_pointer_cast(d_edgesSize.data()),
+                    thrust::raw_pointer_cast(d_distance.data()),
+                    thrust::raw_pointer_cast(d_parent.data()),
+                    queueSize,
+                    thrust::raw_pointer_cast(d_currentQueue.data()));
       // counting degrees phase
-      countDegrees<<<queueSize / 1024 + 1, 1024>>>
-                  (thrust::raw_pointer_cast(d_adjacencyList.data()),
-                  thrust::raw_pointer_cast(d_edgesOffset.data()),
-                  thrust::raw_pointer_cast(d_edgesSize.data()),
-                  thrust::raw_pointer_cast(d_parent.data()),
-                  queueSize,
-                  thrust::raw_pointer_cast(d_currentQueue.data()),
-                  thrust::raw_pointer_cast(d_degrees.data()));
+      augCountDegrees<<<queueSize / 1024 + 1, 1024>>>
+                      (thrust::raw_pointer_cast(d_adjacencyList.data()),
+                      thrust::raw_pointer_cast(d_edgesOffset.data()),
+                      thrust::raw_pointer_cast(d_edgesSize.data()),
+                      thrust::raw_pointer_cast(d_parent.data()),
+                      queueSize,
+                      thrust::raw_pointer_cast(d_currentQueue.data()),
+                      thrust::raw_pointer_cast(d_degrees.data()));
       
       // doing scan on degrees
       thrust::inclusive_scan(d_degrees.begin(), d_degrees.begin() + queueSize, d_degrees.begin());
@@ -254,6 +254,8 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> 
                     thrust::raw_pointer_cast(d_queueID.data()),
                     thrust::raw_pointer_cast(d_nextQueueID.data()),
                     IDTagSize);
+
+      // TODO: change the IDTagList using d_nextQueue and d_nextQueueID
 
       /*thrust::for_each(d_IDTagList.begin(), d_IDTagList.end(), printf_functor());
       std::cout << "\n";
