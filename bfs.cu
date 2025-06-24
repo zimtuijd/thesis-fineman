@@ -14,6 +14,7 @@
 #include <thrust/device_vector.h>
 #include <thrust/copy.h>
 #include <thrust/scan.h>
+#include <thrust/sort.h>
 #include <thrust/for_each.h>
 
 #include "bfs_kernels.cu"
@@ -165,8 +166,8 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
                                thrust::raw_pointer_cast(d_degrees.data()),
                                nextQueueSize);
 
-      thrust::for_each(d_currentQueue.begin(), d_currentQueue.end(), printf_functor());
-      std::cout << "\n";
+      //thrust::for_each(d_currentQueue.begin(), d_currentQueue.end(), printf_functor());
+      //std::cout << "\n";
       
       level++;
       queueSize = nextQueueSize;
@@ -214,22 +215,11 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> 
 
   while (queueSize) {
     
-      // next layer phase
-      augNextLayer<<<queueSize / 1024 + 1, 1024>>>
-                    (level,
-                    thrust::raw_pointer_cast(d_adjacencyList.data()),
-                    thrust::raw_pointer_cast(d_edgesOffset.data()),
-                    thrust::raw_pointer_cast(d_edgesSize.data()),
-                    thrust::raw_pointer_cast(d_distance.data()),
-                    thrust::raw_pointer_cast(d_parent.data()),
-                    queueSize,
-                    thrust::raw_pointer_cast(d_currentQueue.data()));
       // counting degrees phase
       augCountDegrees<<<queueSize / 1024 + 1, 1024>>>
                       (thrust::raw_pointer_cast(d_adjacencyList.data()),
                       thrust::raw_pointer_cast(d_edgesOffset.data()),
                       thrust::raw_pointer_cast(d_edgesSize.data()),
-                      thrust::raw_pointer_cast(d_parent.data()),
                       queueSize,
                       thrust::raw_pointer_cast(d_currentQueue.data()),
                       thrust::raw_pointer_cast(d_degrees.data()));
@@ -255,26 +245,42 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> 
                     thrust::raw_pointer_cast(d_nextQueueID.data()),
                     IDTagSize);
 
-      // TODO: change the IDTagList using d_nextQueue and d_nextQueueID
+      // TODO: sort by d_nextQueueID second
+      thrust::stable_sort_by_key(d_nextQueue.begin(), d_nextQueue.begin() + nextQueueSize,
+                                 d_nextQueueID.begin());
+
+      // TODO: compaction pass, duplication removal using d_nextQueue and d_nextQueueID
+
+      // TODO: handle pivot ID tag list overflow
+      assignPivotID<<<nextQueueSize / 1024 + 1, 1024>>>
+                    (thrust::raw_pointer_cast(d_nextQueue.data()),
+                     thrust::raw_pointer_cast(d_nextQueueID.data()),
+                     thrust::raw_pointer_cast(d_IDTagList.data()),
+                     nextQueueSize,
+                     IDTagSize);
+
 
       /*thrust::for_each(d_IDTagList.begin(), d_IDTagList.end(), printf_functor());
+      std::cout << "\n";
+      thrust::for_each(d_currentQueue.begin(), d_currentQueue.end(), printf_functor());
       std::cout << "\n";
       thrust::for_each(d_queueID.begin(), d_queueID.end(), printf_functor());
       std::cout << "\n";
       thrust::for_each(d_nextQueue.begin(), d_nextQueue.end(), printf_functor());
       std::cout << "\n";
       thrust::for_each(d_nextQueueID.begin(), d_nextQueueID.end(), printf_functor());
+      std::cout << "\n" << nextQueueSize;
       std::cout << "\n\n";*/
 
       queueSize = nextQueueSize;
       d_currentQueue.swap(d_nextQueue);
+      d_queueID.swap(d_nextQueueID);
   }
 
   auto end = std::chrono::steady_clock::now();
   long duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
   printf("Elapsed time in milliseconds : %li ms.\n", duration);
 
-  // TODO: kopieer d_parent en d_distance naar host
 }
 
 void initDevVector(Digraph &G,

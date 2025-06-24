@@ -129,7 +129,6 @@ extern "C" {
   void augNextLayer(int level, int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int *d_distance, int *d_parent,
                     int queueSize, int *d_currentQueue) {
       int thid = blockIdx.x * blockDim.x + threadIdx.x;
-      // TODO: include multiple parents per node?
 
       if (thid < queueSize) {
           int u = d_currentQueue[thid];
@@ -144,17 +143,16 @@ extern "C" {
   }
 
     __global__
-  void augCountDegrees(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int *d_parent,
+  void augCountDegrees(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize,
                        int queueSize, int *d_currentQueue, int *d_degrees) {
       int thid = blockIdx.x * blockDim.x + threadIdx.x;
-      //TODO: multiple parent? change d_parent
 
       if (thid < queueSize) {
           int u = d_currentQueue[thid];
           int degree = 0;
           for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
               int v = d_adjacencyList[i];
-              if (d_parent[v] == i && v != u) {
+              if (v != u) {
                   ++degree;
               }
           }
@@ -162,13 +160,23 @@ extern "C" {
       }
   }
 
+  __device__
+  bool isVisitedByPivotID(int v, int u_pivotID, int IDTagSize, int *d_IDTagList) {
+    
+    for (int tagIdx = IDTagSize * v; tagIdx < IDTagSize * v + IDTagSize; tagIdx++) {
+      if (d_IDTagList[tagIdx] == u_pivotID) {
+        return true;
+      }
+    }
+    return false;
+  
+  }
+
   __global__
   void augAssignVNQ(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int *d_parent, int queueSize,
                     int *d_currentQueue, int *d_nextQueue, int *d_degrees, int nextQueueSize,
                     int* d_IDTagList, int* d_queueID, int* d_nextQueueID, int IDTagSize) {
       int thid = blockIdx.x * blockDim.x + threadIdx.x;
-
-      // TODO: change duplication removal to also include pivot ID, maybe even remove it?
 
       if (thid < queueSize) {
           int sum = 0;
@@ -179,21 +187,13 @@ extern "C" {
           int u = d_currentQueue[thid];
           int u_pivotID = d_queueID[thid]; // current node's pivot ID
           int counter = 0;
-          bool visitedPivotID = false;
           for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
               int v = d_adjacencyList[i];
-              if (d_parent[v] == i && v != u) {
+              if (v != u) {
                   
-                  // scan through d_IDTagList to check if node has been reached by pivot ID yet
-                  for (int tagIdx = IDTagSize * v; tagIdx < IDTagSize * v + IDTagSize; tagIdx++) {
-                    if (d_IDTagList[tagIdx] == u_pivotID) {
-                      visitedPivotID = true;
-                    }
-                  }
-
-                  // if visited by pivot ID, do not add node to queue
-                  if (visitedPivotID) {
-                    visitedPivotID = false;
+                  // scan through d_IDTagList to check if node has been reached by pivot ID 
+                  // if already visited by pivot id, do not add to queue
+                  if (isVisitedByPivotID(v, u_pivotID, IDTagSize, d_IDTagList)) {
                     break;
                   }
 
@@ -203,6 +203,47 @@ extern "C" {
                   counter++;
               }
           }
+      }
+  }
+
+  __device__
+  bool updateIDTagList(int *d_IDTagList, int IDTagSize, int v, int v_pivotID) {
+
+    // Find first empty slot in d_IDTagList for some v
+    // If found, pivot ID is included and returns true
+    // If not found, returns false
+    for (int i = v * IDTagSize; i < i + IDTagSize; i++) {
+      if (d_IDTagList[i] == -1) {
+        d_IDTagList[i] = v_pivotID;
+        return true;
+      }
+    }
+    return false;
+
+  }
+
+  __global__
+  void assignPivotID(int *d_nextQueue, int *d_nextQueueID, int *d_IDTagList,
+                     int nextQueueSize, int IDTagSize) {
+      
+      int thid = blockIdx.x * blockDim.x + threadIdx.x;
+
+      if (thid < nextQueueSize) {
+        
+        // Check whether this is the first occurence of the vertex in the frontier
+        if (thid == 0 || d_nextQueue[thid] != d_nextQueue[thid - 1]) {
+          
+          int v = d_nextQueue[thid];
+          
+          // Check next log(n) places in d_nextQueue for vertex v
+          // Add pivot ID to d_IDTagList, if index i in d_nextQueue matches v
+          for (int i = thid; i < thid + IDTagSize; i++) {
+            if (d_nextQueue[i] == v && !updateIDTagList(d_IDTagList, IDTagSize,
+                                                        v, d_nextQueueID[i])) {
+              return;
+            }
+          }
+        }
       }
   }
 
