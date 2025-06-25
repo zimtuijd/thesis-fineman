@@ -173,7 +173,7 @@ extern "C" {
   }
 
   __global__
-  void augAssignVNQ(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int *d_parent, int queueSize,
+  void augAssignVNQ(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int queueSize,
                     int *d_currentQueue, int *d_nextQueue, int *d_degrees, int nextQueueSize,
                     int* d_IDTagList, int* d_queueID, int* d_nextQueueID, int IDTagSize) {
       int thid = blockIdx.x * blockDim.x + threadIdx.x;
