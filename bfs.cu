@@ -16,6 +16,8 @@
 #include <thrust/scan.h>
 #include <thrust/sort.h>
 #include <thrust/for_each.h>
+#include <thrust/iterator/zip_iterator.h>
+#include <thrust/tuple.h>
 
 #include "bfs_kernels.cu"
 #include "digraph.h"
@@ -29,6 +31,21 @@ struct printf_functor
     // code compiled for a GPU with compute capability 2.0 or
     // higher (nvcc --arch=sm_20)
     printf("%d ", x);
+  }
+};
+
+// Used in augmented BFS to sort by vertex first and pivot ID second
+struct sort_vertex_ID
+{
+  __host__ __device__
+  bool operator()(thrust::tuple<int, int> const &a, thrust::tuple<int, int> const &b)
+  {
+    if (thrust::get<0>(a) < thrust::get<0>(b)) // vertex in a smaller than vertex in b
+      return true;
+    if (thrust::get<0>(a) > thrust::get<0>(b)) // vertex in a larger than vertex in b
+      return false;
+      
+    return thrust::get<1>(a) < thrust::get<1>(b); // if vertices are equal, check for pivot ID
   }
 };
 
@@ -245,11 +262,18 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> 
                     thrust::raw_pointer_cast(d_nextQueueID.data()),
                     IDTagSize);
 
-      // TODO: sort by d_nextQueueID second
-      thrust::stable_sort_by_key(d_nextQueue.begin(), d_nextQueue.begin() + nextQueueSize,
-                                 d_nextQueueID.begin());
+
+      // Sorts values in d_nextQueue and d_nextQueueID
+      // Sorts by vertex first, pivot ID second (so d_nextQueue first, d_nextQueueID second)
+
+      auto iterSortFirst = thrust::make_zip_iterator(thrust::make_tuple(d_nextQueue.begin(), d_nextQueueID.begin()));
+      auto iterSortLast = thrust::make_zip_iterator(thrust::make_tuple(d_nextQueue.begin() + nextQueueSize,
+                                                                       d_nextQueueID.begin() + nextQueueSize));
+
+      thrust::stable_sort(iterSortFirst, iterSortLast, sort_vertex_ID());
 
       // TODO: compaction pass, duplication removal using d_nextQueue and d_nextQueueID
+
 
       // TODO: handle pivot ID tag list overflow
       assignPivotID<<<nextQueueSize / 1024 + 1, 1024>>>
@@ -260,7 +284,7 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> 
                      IDTagSize);
 
 
-      /*thrust::for_each(d_IDTagList.begin(), d_IDTagList.end(), printf_functor());
+      thrust::for_each(d_IDTagList.begin(), d_IDTagList.end(), printf_functor());
       std::cout << "\n";
       thrust::for_each(d_currentQueue.begin(), d_currentQueue.end(), printf_functor());
       std::cout << "\n";
@@ -270,7 +294,7 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> 
       std::cout << "\n";
       thrust::for_each(d_nextQueueID.begin(), d_nextQueueID.end(), printf_functor());
       std::cout << "\n" << nextQueueSize;
-      std::cout << "\n\n";*/
+      std::cout << "\n\n";
 
       queueSize = nextQueueSize;
       d_currentQueue.swap(d_nextQueue);
@@ -323,7 +347,7 @@ int startBFS(Digraph &G, int startVertex,
              d_parent, d_currentQueue, d_nextQueue, d_degrees);
 
 
-  std::vector<int> startVertices = {0,2};
+  std::vector<int> startVertices = {0};
   int IDTagSize = std::ceil(std::log(G.numVertices));
   thrust::device_vector<int> d_IDTagList(G.numVertices * IDTagSize);
   thrust::device_vector<int> d_queueID(G.numVertices, -1);
