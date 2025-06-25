@@ -211,10 +211,17 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
   int level = 0;
   bool reachedEnd = true;
 
+  // Used as a flag by assignPivotID()
+  thrust::device_vector<bool> IDTagListOverflow(1, false);
+
   while (queueSize) {
 
-      if (level >= distance) {
+      if (distance > -1 && level >= distance) {
         reachedEnd = false;
+        break;
+      }
+
+      if (IDTagListOverflow[0]) {
         break;
       }
 
@@ -263,14 +270,14 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
         nextQueueSize = thrust::distance(iterUnique, iterSortLast);
       }
 
-      // TODO: handle pivot ID tag list overflow
+      // Assigns pivot IDS to d_IDTagList
       assignPivotID<<<nextQueueSize / 1024 + 1, 1024>>>
                     (thrust::raw_pointer_cast(d_nextQueue.data()),
                      thrust::raw_pointer_cast(d_nextQueueID.data()),
                      thrust::raw_pointer_cast(d_IDTagList.data()),
                      nextQueueSize,
-                     IDTagSize);
-
+                     IDTagSize,
+                     thrust::raw_pointer_cast(IDTagListOverflow.data()));
       
       /*thrust::for_each(d_IDTagList.begin(), d_IDTagList.end(), printf_functor());
       std::cout << "\n";
@@ -296,6 +303,9 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
 
   if (!reachedEnd) {
     printf("Did not reach end.\n");
+  }
+  if (IDTagListOverflow[0]) {
+    printf("ID Tag list has overflow.\n");
   }
 
 }
@@ -340,7 +350,7 @@ int startBFS(Digraph &G, int startVertex,
              d_parent, d_currentQueue, d_nextQueue, d_degrees);
 
 
-  int dD = 3;
+  int dD = -1;
   std::vector<int> startVertices = {0, 2};
   int IDTagSize = std::ceil(std::log(G.numVertices));
   thrust::device_vector<int> d_IDTagList(G.numVertices * IDTagSize);

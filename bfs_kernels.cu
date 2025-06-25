@@ -212,7 +212,7 @@ extern "C" {
     // Find first empty slot in d_IDTagList for some v
     // If found, pivot ID is included and returns true
     // If not found, returns false
-    for (int i = v * IDTagSize; i < i + IDTagSize; i++) {
+    for (int i = v * IDTagSize; i < v * IDTagSize + IDTagSize; i++) {
       if (d_IDTagList[i] == -1) {
         d_IDTagList[i] = v_pivotID;
         return true;
@@ -224,7 +224,7 @@ extern "C" {
 
   __global__
   void assignPivotID(int *d_nextQueue, int *d_nextQueueID, int *d_IDTagList,
-                     int nextQueueSize, int IDTagSize) {
+                     int nextQueueSize, int IDTagSize, bool *IDTagListOverflow) {
       
       int thid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -240,6 +240,7 @@ extern "C" {
           for (int i = thid; i < thid + IDTagSize; i++) {
             if (d_nextQueue[i] == v && !updateIDTagList(d_IDTagList, IDTagSize,
                                                         v, d_nextQueueID[i])) {
+              IDTagListOverflow[0] = 1;
               return;
             }
           }
