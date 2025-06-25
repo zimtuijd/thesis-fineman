@@ -13,11 +13,13 @@
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 #include <thrust/copy.h>
+#include <thrust/fill.h>
 #include <thrust/scan.h>
 #include <thrust/sort.h>
 #include <thrust/for_each.h>
 #include <thrust/iterator/zip_iterator.h>
 #include <thrust/tuple.h>
+#include <thrust/unique.h>
 
 #include "bfs_kernels.cu"
 #include "digraph.h"
@@ -228,7 +230,7 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> 
 
   int queueSize = startVertices.size();
   int nextQueueSize = 0;
-  int level = 0;
+  //int level = 0;
 
   while (queueSize) {
     
@@ -272,8 +274,12 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> 
 
       thrust::stable_sort(iterSortFirst, iterSortLast, sort_vertex_ID());
 
-      // TODO: compaction pass, duplication removal using d_nextQueue and d_nextQueueID
-
+      // Compaction pass, duplication removal using d_nextQueue and d_nextQueueID
+      auto iterUnique = thrust::unique(iterSortFirst, iterSortLast);
+      if (iterUnique != iterSortLast) {
+        thrust::fill(iterUnique, iterSortLast, thrust::make_tuple(0, -1));
+        nextQueueSize = thrust::distance(iterUnique, iterSortLast);
+      }
 
       // TODO: handle pivot ID tag list overflow
       assignPivotID<<<nextQueueSize / 1024 + 1, 1024>>>
@@ -283,7 +289,7 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G, std::vector<int> 
                      nextQueueSize,
                      IDTagSize);
 
-
+      
       thrust::for_each(d_IDTagList.begin(), d_IDTagList.end(), printf_functor());
       std::cout << "\n";
       thrust::for_each(d_currentQueue.begin(), d_currentQueue.end(), printf_functor());
