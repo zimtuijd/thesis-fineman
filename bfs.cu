@@ -1,5 +1,5 @@
 /* Tim Zuijderduijn (s3620166) 2025
-   main.cc
+   bfs.cu
 */
 
 #include <cstdio>
@@ -183,11 +183,11 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
     printf("Did not reach end.\n");
   }
   
-  std::cout << "\n" << level << " " << maxLevel << "\n";
+  //std::cout << "\n" << level << " " << maxLevel << "\n";
 
 }
 
-void runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
+bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
                    int distance, int numVertices, int IDTagSize,
                    thrust::device_vector<int> &d_adjacencyList,
                    thrust::device_vector<int> &d_edgesOffset,
@@ -216,6 +216,7 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
 
   while (queueSize) {
 
+      // Stops the BFS if a given distance has been reached
       if (distance > -1 && level >= distance) {
         reachedEnd = false;
         break;
@@ -308,6 +309,10 @@ void runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
     printf("ID Tag list has overflow.\n");
   }
 
+  // Returns true if there was no IDTagList overflow
+  // Returns false otherwise
+  return !IDTagListOverflow[0];
+
 }
 
 void initDevVector(Digraph &G,
@@ -351,7 +356,7 @@ int startBFS(Digraph &G, int startVertex,
 
 
   int dD = -1;
-  std::vector<int> startVertices = {0, 2};
+  std::vector<int> startVertices = {0, 2, 4};
   int IDTagSize = std::ceil(std::log(G.numVertices));
   thrust::device_vector<int> d_IDTagList(G.numVertices * IDTagSize);
   thrust::device_vector<int> d_queueID(G.numVertices, -1);
@@ -361,10 +366,12 @@ int startBFS(Digraph &G, int startVertex,
                 d_parent, d_currentQueue, d_nextQueue, d_degrees);
 
   // augmented BFS
-  runCudaBfsAug(startVertices, G, dD, G.numVertices, IDTagSize,
-                d_adjacencyList, d_edgesOffset, d_edgesSize,
-                d_currentQueue, d_nextQueue, d_degrees,
-                d_IDTagList, d_queueID, d_nextQueueID);
+  if (!runCudaBfsAug(startVertices, G, dD, G.numVertices, IDTagSize,
+                    d_adjacencyList, d_edgesOffset, d_edgesSize,
+                    d_currentQueue, d_nextQueue, d_degrees,
+                    d_IDTagList, d_queueID, d_nextQueueID)) {
+    std::cout << "Augmented BFS returned false.\n";
+  } 
 
   return 0;
 

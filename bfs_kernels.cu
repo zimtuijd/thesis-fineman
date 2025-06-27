@@ -1,5 +1,5 @@
 /* Tim Zuijderduijn (s3620166) 2025
-   bfs.cu
+   bfs_kernels.cu
 */
 
 #include <device_launch_parameters.h>

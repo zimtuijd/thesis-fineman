@@ -1,8 +1,8 @@
 /* Tim Zuijderduijn (s3620166) 2025
-   main.cc
+   main.cu
 */
 
-#include "bfs.cu"
+#include "fineman.cu"
 #include <cuda.h>
 
 CUdevice cuDevice;
@@ -23,7 +23,6 @@ void initCuda(Digraph &G) {
   checkError(cuCtxCreate(&cuContext, 0, cuDevice), "cannot create context");
 }
 
-
 int main(int argc, char** argv) {
 
   Digraph G;
@@ -39,7 +38,7 @@ int main(int argc, char** argv) {
 
   initCuda(G);
 
-  // verwijs naar bfs.cu
+  // runs the bfs implementations
   startBFS(G, startVertex, distance, parent);
 
   return 0;
