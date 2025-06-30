@@ -39,7 +39,9 @@ int main(int argc, char** argv) {
   initCuda(G);
 
   // runs the bfs implementations
-  startBFS(G, startVertex, distance, parent);
+  // startBFS(G, startVertex, distance, parent);
+
+  startFineman(G);
 
   return 0;
 
