@@ -336,7 +336,55 @@ void initDevVector(Digraph &G,
 
 }
 
-int startBFS(Digraph &G, int startVertex,
+void startBFS(Digraph &G, int startVertex) {
+
+  std::vector<int> distance(G.numVertices, std::numeric_limits<int>::max());
+  std::vector<int> parent(G.numVertices, std::numeric_limits<int>::max());
+
+  // device vectors for kernels
+  thrust::device_vector<int> d_adjacencyList(G.adjacencyList);
+  thrust::device_vector<int> d_edgesOffset(G.edgesOffset);
+  thrust::device_vector<int> d_edgesSize(G.edgesSize);
+  thrust::device_vector<int> d_distance(G.numVertices, 0);
+  thrust::device_vector<int> d_parent(G.numVertices, 0);
+  thrust::device_vector<int> d_currentQueue(G.numVertices, 0);
+  thrust::device_vector<int> d_nextQueue(G.numVertices, 0);
+  thrust::device_vector<int> d_degrees(G.numVertices, 0);
+
+  // normal BFS
+  runCudaBfs(startVertex, G, distance, parent, G.numVertices,
+             d_adjacencyList, d_edgesOffset, d_edgesSize, d_distance,
+             d_parent, d_currentQueue, d_nextQueue, d_degrees);
+
+}
+
+void startAugBFS(Digraph &G, std::vector<int> startVertices, int dist) {
+
+  thrust::device_vector<int> d_adjacencyList(G.adjacencyList);
+  thrust::device_vector<int> d_edgesOffset(G.edgesOffset);
+  thrust::device_vector<int> d_edgesSize(G.edgesSize);
+  thrust::device_vector<int> d_distance(G.numVertices, 0);
+  thrust::device_vector<int> d_parent(G.numVertices, 0);
+  thrust::device_vector<int> d_currentQueue(G.numVertices, 0);
+  thrust::device_vector<int> d_nextQueue(G.numVertices, 0);
+  thrust::device_vector<int> d_degrees(G.numVertices, 0);
+
+  int IDTagSize = std::ceil(std::log(G.numVertices));
+  thrust::device_vector<int> d_IDTagList(G.numVertices * IDTagSize);
+  thrust::device_vector<int> d_queueID(G.numVertices, -1);
+  thrust::device_vector<int> d_nextQueueID(G.numVertices, -1);
+
+  // augmented BFS
+  if (!runCudaBfsAug(startVertices, G, dist, G.numVertices, IDTagSize,
+                    d_adjacencyList, d_edgesOffset, d_edgesSize,
+                    d_currentQueue, d_nextQueue, d_degrees,
+                    d_IDTagList, d_queueID, d_nextQueueID)) {
+    std::cout << "Augmented BFS returned false.\n";
+  } 
+
+}
+
+int testBFS(Digraph &G, int startVertex,
              std::vector<int> &distance, std::vector<int> &parent) {
 
   // device vectors for kernels
