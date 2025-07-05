@@ -8,7 +8,7 @@
 #include <thrust/random.h>
 #include <thrust/shuffle.h>
 
-void parSC(Digraph &G, int maxLevel, float eps_pi,
+bool parSC(Digraph &G, int maxLevel, float eps_pi,
            thrust::device_vector<int> &d_shortcutEdges) {
 
   int k = std::ceil(std::log(1 - (G.numVertices / (2*(1 + eps_pi))) + 0.5*G.numVertices)
@@ -18,7 +18,13 @@ void parSC(Digraph &G, int maxLevel, float eps_pi,
   int level = 0;
   int partitionSize = 0;
 
-  // TODO: randomly permute list of vertices
+  // Rj+, Rj-, Fj+, Fj-
+  thrust::device_vector<int> d_coreForward(G.numVertices, 0);
+  thrust::device_vector<int> d_coreBack(G.numVertices, 0);
+  thrust::device_vector<int> d_fringeForward(G.numVertices, 0);
+  thrust::device_vector<int> d_fringeBack(G.numVertices, 0);
+
+  // TODO: random seed
   thrust::device_vector<int> d_vertPermutation(G.numVertices, 0);
   thrust::shuffle_copy(thrust::counting_iterator<int>(0),
                        thrust::counting_iterator<int>(G.numVertices),
@@ -43,14 +49,19 @@ void parSC(Digraph &G, int maxLevel, float eps_pi,
       break;
     }
 
-    // TODO: calculate max and min distance and choose random distance
+    // TODO: choose random distance
     int min_d = 1 + (maxLevel - level) * maxK * numLayers - i * numLayers;
     int max_d = min_d + numLayers - 1;
     //std::cout << min_d << " " << max_d << "\n";
     int dist = min_d;
 
-    // TODO: make use of augBFS
-    startAugBFS(G, partitionVertices, dist);
+    // TODO: variant of G for back search
+    if (!startAugBFS(G, partitionVertices, dist, d_coreForward) &&
+        !startAugBFS(G, partitionVertices, dist, d_coreBack) &&
+        !startAugBFS(G, partitionVertices, dist + 1, d_fringeForward) &&
+        !startAugBFS(G, partitionVertices, dist + 1, d_fringeBack)) {
+      return false;
+    }
 
     // TODO: vertices reached by searches, new shortcuts, adjust graph accordingly using dead vertices
     
@@ -58,6 +69,8 @@ void parSC(Digraph &G, int maxLevel, float eps_pi,
   }
 
   // TODO: finishing parSC?
+
+  return true;
 
 }
 

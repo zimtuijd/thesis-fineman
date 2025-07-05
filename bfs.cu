@@ -51,6 +51,23 @@ struct sort_vertex_ID
   }
 };
 
+// Used to sort IDTagList by lowest ID tag first, -1 is sorted to the back of the subarrays
+struct sort_lowest_IDTag
+{
+  __host__ __device__
+  bool operator()(int a, int b)
+  {
+    if (a < b && a != -1) // a smaller than b, a is not -1
+      return true;
+    
+    if (b == -1) // if a is larger/equal to b, check if b is not -1
+      return true;
+    
+    // else if a >= b and b != -1
+    return false;
+  }
+};
+
 void checkOutput(std::vector<int> &distance, std::vector<int> &expectedDistance, Digraph &G) {
   for (int i = 0; i < G.numVertices; i++) {
       if (distance[i] != expectedDistance[i]) {
@@ -358,7 +375,8 @@ void startBFS(Digraph &G, int startVertex) {
 
 }
 
-void startAugBFS(Digraph &G, std::vector<int> startVertices, int dist) {
+bool startAugBFS(Digraph &G, std::vector<int> &startVertices, int dist,
+                 thrust::device_vector<int> &d_IDTagVertices) {
 
   thrust::device_vector<int> d_adjacencyList(G.adjacencyList);
   thrust::device_vector<int> d_edgesOffset(G.edgesOffset);
@@ -380,7 +398,18 @@ void startAugBFS(Digraph &G, std::vector<int> startVertices, int dist) {
                     d_currentQueue, d_nextQueue, d_degrees,
                     d_IDTagList, d_queueID, d_nextQueueID)) {
     std::cout << "Augmented BFS returned false.\n";
-  } 
+    return false;
+  }
+
+  // Return lowest IDTag per vertex in d_IDTagList
+  for (int i = 0; i < G.numVertices; i++) {
+    thrust::stable_sort(d_IDTagList.begin() + i * IDTagSize,
+                        d_IDTagList.begin() + i * IDTagSize + IDTagSize,
+                        sort_lowest_IDTag());
+    d_IDTagVertices[i] = d_IDTagList[i * IDTagSize];
+  }
+  
+  return true;
 
 }
 
