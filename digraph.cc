@@ -40,3 +40,39 @@ void readGraph(Digraph &G, int argc, char **argv) {
     G.numVertices = n;
     G.numEdges = G.adjacencyList.size();
 }
+
+Digraph transposeGraph(Digraph &G) {
+
+  Digraph result {
+    std::vector<int>(),
+    std::vector<int>(),
+    std::vector<int>(),
+    G.numVertices,
+    G.numEdges
+  };
+
+  int countTotal = 0;
+
+  for (int i = 0; i < G.numVertices; i++) {
+    
+    int count = 0;
+    result.edgesOffset.push_back(countTotal);
+
+    for (int j = 0; j < G.numVertices; j++) {
+      for (int k = G.edgesOffset[j]; k < G.edgesOffset[j] + G.edgesSize[j]; k++) {
+        if (G.adjacencyList[k] == i) {
+          result.adjacencyList.push_back(j);
+          count++;
+          break;
+        }
+      }
+    }
+
+    result.edgesSize.push_back(count);
+    countTotal += count;
+
+  }
+
+  return result;
+
+}

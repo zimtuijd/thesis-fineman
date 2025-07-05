@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstdio>
 #include <cstdlib>
+#include <iostream>
 
 struct Digraph {
     std::vector<int> adjacencyList; // all edges
@@ -14,5 +15,6 @@ struct Digraph {
 };
 
 void readGraph(Digraph &G, int argc, char **argv);
+Digraph transposeGraph(Digraph &G);
 
 #endif //BFS_CUDA_GRAPH_H
