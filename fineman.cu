@@ -7,9 +7,10 @@
 #include <thrust/sequence.h>
 #include <thrust/random.h>
 #include <thrust/shuffle.h>
+#include <thrust/set_operations.h>
 
 bool parSC(Digraph &G, int maxLevel, float eps_pi,
-           thrust::device_vector<int> &d_shortcutEdges) {
+           thrust::device_vector<int> &d_shortcutTODO) {
 
   int k = std::ceil(std::log(1 - (G.numVertices / (2*(1 + eps_pi))) + 0.5*G.numVertices)
                     / std::log(1 + eps_pi));
@@ -23,6 +24,12 @@ bool parSC(Digraph &G, int maxLevel, float eps_pi,
   thrust::device_vector<int> d_coreBack(G.numVertices, 0);
   thrust::device_vector<int> d_fringeForward(G.numVertices, 0);
   thrust::device_vector<int> d_fringeBack(G.numVertices, 0);
+
+  thrust::device_vector<int> d_forwardVert(G.numVertices, 0);
+  thrust::device_vector<int> d_backVert(G.numVertices, 0);  
+
+  thrust::device_vector<int> d_deadVertices(G.numVertices, 0);
+  thrust::device_vector<thrust::tuple<int, int>> d_shortcutEdges();
 
   // TODO: random seed
   thrust::device_vector<int> d_vertPermutation(G.numVertices, 0);
@@ -43,16 +50,19 @@ bool parSC(Digraph &G, int maxLevel, float eps_pi,
     else {
       partitionSize = std::pow(1 + eps_pi, 2*k - i + 1);
     }
+
+    // Contains vertices which will be searched from in current Xi
     std::vector<int> partitionVertices(d_vertPermutation.begin(), d_vertPermutation.begin() + partitionSize);
 
     if (level >= maxLevel) {
       break;
     }
-
-    // TODO: choose random distance
+ 
     int min_d = 1 + (maxLevel - level) * maxK * numLayers - i * numLayers;
     int max_d = min_d + numLayers - 1;
     //std::cout << min_d << " " << max_d << "\n";
+    
+    // TODO: choose random distance
     int dist = min_d;
 
     // TODO: variant of G for back search
@@ -63,8 +73,28 @@ bool parSC(Digraph &G, int maxLevel, float eps_pi,
       return false;
     }
 
-    // TODO: vertices reached by searches, new shortcuts, adjust graph accordingly using dead vertices
+    // Fringe sets should not contain core vertices
+    auto fringeForwardLast = thrust::set_difference(d_fringeForward.begin(), d_fringeForward.end(),
+                                                    d_coreForward.begin(), d_coreForward.end(),
+                                                    d_fringeForward.begin()); 
+    auto fringeBackLast = thrust::set_difference(d_fringeBack.begin(), d_fringeBack.end(),
+                                                 d_coreBack.begin(), d_coreBack.end(),
+                                                 d_fringeBack.begin());
+
+    // Calculating sets indicated by V_F,j and V_B,j in paper
+    // Returns iterator referring to the end of output sets
+    auto forwardLast = thrust::set_difference(d_coreForward.begin(), d_coreForward.end(),
+                                              d_coreBack.begin(), d_coreBack.end(), d_forwardVert.begin());
+    auto backLast = thrust::set_difference(d_coreBack.begin(), d_coreBack.end(),
+                                           d_coreForward.begin(), d_coreForward.end(), d_backVert.begin());
     
+
+    // TODO: new shortcuts
+    
+
+    // TODO: set dead vertices
+    
+
     level++;
   }
 
