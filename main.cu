@@ -4,6 +4,7 @@
 
 #include "fineman.cu"
 #include <cuda.h>
+#include <thrust/version.h>
 
 CUdevice cuDevice;
 CUcontext cuContext;
@@ -39,9 +40,9 @@ int main(int argc, char** argv) {
   initCuda(G);
 
   // runs the bfs implementations
-  // testBFS(G, startVertex, distance, parent);
+  testBFS(G, startVertex, distance, parent);
 
-  startFineman(G);
+  //startFineman(G);
 
   return 0;
 
