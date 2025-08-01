@@ -205,7 +205,7 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
                   thrust::raw_pointer_cast(d_degrees.data()));
       
       // doing scan on degrees
-      thrust::inclusive_scan(d_degrees.begin(), d_degrees.begin() + queueSize, d_degrees.begin());
+      thrust::inclusive_scan(d_degrees.begin(), d_degrees.begin() + queueSize - 1, d_degrees.begin());
       nextQueueSize = d_degrees[queueSize - 1];
 
       // assigning vertices to nextQueue
@@ -289,7 +289,7 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
                       IDTagSize);
       
       // Doing scan on degrees
-      thrust::inclusive_scan(d_degrees.begin(), d_degrees.begin() + queueSize, d_degrees.begin());
+      thrust::inclusive_scan(d_degrees.begin(), d_degrees.begin() + queueSize - 1, d_degrees.begin());
       nextQueueSize = d_degrees[queueSize - 1];
 
       // Assigning vertices to nextQueue
