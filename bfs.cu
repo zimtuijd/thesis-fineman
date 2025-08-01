@@ -194,6 +194,7 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
                 thrust::raw_pointer_cast(d_parent.data()),
                 queueSize,
                 thrust::raw_pointer_cast(d_currentQueue.data()));
+
       // counting degrees phase
       countDegrees<<<queueSize / 1024 + 1, 1024>>>
                   (thrust::raw_pointer_cast(d_adjacencyList.data()),
@@ -203,9 +204,9 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
                   queueSize,
                   thrust::raw_pointer_cast(d_currentQueue.data()),
                   thrust::raw_pointer_cast(d_degrees.data()));
-      
+                  
       // doing scan on degrees
-      thrust::inclusive_scan(d_degrees.begin(), d_degrees.begin() + queueSize - 1, d_degrees.begin());
+      thrust::inclusive_scan(d_degrees.begin(), d_degrees.begin() + queueSize, d_degrees.begin());
       nextQueueSize = d_degrees[queueSize - 1];
 
       // assigning vertices to nextQueue
@@ -219,20 +220,23 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
                                thrust::raw_pointer_cast(d_nextQueue.data()),
                                thrust::raw_pointer_cast(d_degrees.data()),
                                nextQueueSize);
-      
+
       level++;
       queueSize = nextQueueSize;
       d_currentQueue.swap(d_nextQueue);
   }
 
+  auto end = std::chrono::steady_clock::now();
+  long duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+  
   if (!reachedEnd) {
     printf("Did not reach end.\n");
   }
-
-  auto end = std::chrono::steady_clock::now();
-  long duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
   printf("Elapsed time in milliseconds : %li ms.\n\n", duration);
-  
+
+  thrust::copy(d_distance.begin(), d_distance.end(), distance.begin());
+  thrust::copy(d_parent.begin(), d_parent.end(), parent.begin());
+
   //std::cout << "\n" << level << " " << maxLevel << "\n";
 
 }
@@ -289,7 +293,7 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
                       IDTagSize);
       
       // Doing scan on degrees
-      thrust::inclusive_scan(d_degrees.begin(), d_degrees.begin() + queueSize - 1, d_degrees.begin());
+      thrust::inclusive_scan(d_degrees.begin(), d_degrees.begin() + queueSize, d_degrees.begin());
       nextQueueSize = d_degrees[queueSize - 1];
 
       // Assigning vertices to nextQueue
@@ -320,7 +324,7 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
       auto iterUnique = thrust::unique(iterSortFirst, iterSortLast);
       if (iterUnique != iterSortLast) {
         thrust::fill(iterUnique, iterSortLast, thrust::make_tuple(0, -1));
-        nextQueueSize = thrust::distance(iterUnique, iterSortLast);
+        nextQueueSize -= thrust::distance(iterUnique, iterSortLast);
       }
 
       // Assigns pivot IDS to d_IDTagList
@@ -456,6 +460,10 @@ int testBFS(Digraph &G, int startVertex,
   std::vector<bool> visited(G.numVertices, false);
   runSeqBFS(startVertex, G, distance, parent, visited);
 
+  // distance and parent for parallel BFS
+  std::vector<int> distanceP(G.numVertices, std::numeric_limits<int>::max());
+  std::vector<int> parentP(G.numVertices, std::numeric_limits<int>::max());
+
   // device vectors for kernels
   thrust::device_vector<int> d_adjacencyList(G.adjacencyList);
   thrust::device_vector<int> d_edgesOffset(G.edgesOffset);
@@ -467,13 +475,14 @@ int testBFS(Digraph &G, int startVertex,
   thrust::device_vector<int> d_degrees(G.numVertices, 0);
 
   // normal parallel BFS
-  runCudaBfs(startVertex, G, distance, parent, G.numVertices,
+  runCudaBfs(startVertex, G, distanceP, parentP, G.numVertices,
              d_adjacencyList, d_edgesOffset, d_edgesSize, d_distance,
              d_parent, d_currentQueue, d_nextQueue, d_degrees);
 
+  checkOutput(distanceP, distance, G);
 
   int dD = -1; // -1 means no distance bound
-  std::vector<int> startVertices = {0};
+  std::vector<int> startVertices = {startVertex};
   int IDTagSize = std::ceil(std::log(G.numVertices));
   thrust::device_vector<int> d_IDTagList(G.numVertices * IDTagSize);
   thrust::device_vector<int> d_queueID(G.numVertices, -1);

@@ -104,7 +104,7 @@ extern "C" {
           __syncthreads();
           */
           int sum = 0;
-          if (threadIdx.x) {
+          if (thid > 0) {
               sum = d_degrees[thid - 1];
           }
 
@@ -165,7 +165,7 @@ extern "C" {
 
       if (thid < queueSize) {
           int sum = 0;
-          if (threadIdx.x) {
+          if (thid > 0) {
               sum = d_degrees[thid - 1];
           }
 
