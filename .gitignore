@@ -5,3 +5,5 @@ main
 in.txt
 in.py
 ./debug
+*.mtx
+in2.py
