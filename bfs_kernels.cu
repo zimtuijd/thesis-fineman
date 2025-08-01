@@ -125,41 +125,6 @@ extern "C" {
    * Augmented BFS
   */
 
-  __global__
-  void augNextLayer(int level, int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int *d_distance, int *d_parent,
-                    int queueSize, int *d_currentQueue) {
-      int thid = blockIdx.x * blockDim.x + threadIdx.x;
-
-      if (thid < queueSize) {
-          int u = d_currentQueue[thid];
-          for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
-              int v = d_adjacencyList[i];
-              if (level + 1 < d_distance[v]) {
-                  d_distance[v] = level + 1;
-                  d_parent[v] = i;
-              }
-          }
-      }
-  }
-
-    __global__
-  void augCountDegrees(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize,
-                       int queueSize, int *d_currentQueue, int *d_degrees) {
-      int thid = blockIdx.x * blockDim.x + threadIdx.x;
-
-      if (thid < queueSize) {
-          int u = d_currentQueue[thid];
-          int degree = 0;
-          for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
-              int v = d_adjacencyList[i];
-              if (v != u) {
-                  ++degree;
-              }
-          }
-          d_degrees[thid] = degree;
-      }
-  }
-
   __device__
   bool isVisitedByPivotID(int v, int u_pivotID, int IDTagSize, int *d_IDTagList) {
     
@@ -170,6 +135,26 @@ extern "C" {
     }
     return false;
   
+  }
+
+    __global__
+  void augCountDegrees(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize,
+                       int queueSize, int *d_currentQueue, int *d_degrees,
+                       int* d_IDTagList, int* d_queueID, int IDTagSize) {
+      int thid = blockIdx.x * blockDim.x + threadIdx.x;
+
+      if (thid < queueSize) {
+          int u = d_currentQueue[thid];
+          int u_pivotID = d_queueID[thid]; // current node's pivot ID
+          int degree = 0;
+          for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
+              int v = d_adjacencyList[i];
+              if (v != u && !isVisitedByPivotID(v, u_pivotID, IDTagSize, d_IDTagList)) {
+                  ++degree;
+              }
+          }
+          d_degrees[thid] = degree;
+      }
   }
 
   __global__
@@ -189,14 +174,9 @@ extern "C" {
           int counter = 0;
           for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
               int v = d_adjacencyList[i];
-              if (v != u) {
-                  
-                  // scan through d_IDTagList to check if node has been reached by pivot ID 
-                  // if already visited by pivot id, do not add to queue
-                  if (isVisitedByPivotID(v, u_pivotID, IDTagSize, d_IDTagList)) {
-                    break;
-                  }
-
+              // scan through d_IDTagList to check if node has been reached by pivot ID 
+              // if already visited by pivot id, do not add to queue
+              if (v != u && !isVisitedByPivotID(v, u_pivotID, IDTagSize, d_IDTagList)) {
                   int nextQueuePlace = sum + counter;
                   d_nextQueue[nextQueuePlace] = v;
                   d_nextQueueID[nextQueuePlace] = u_pivotID; // adds corresponding pivot ID to next queue
@@ -238,8 +218,8 @@ extern "C" {
           // Check next log(n) places in d_nextQueue for vertex v
           // Add pivot ID to d_IDTagList, if index i in d_nextQueue matches v
           for (int i = thid; i < thid + IDTagSize; i++) {
-            if (d_nextQueue[i] == v && !updateIDTagList(d_IDTagList, IDTagSize,
-                                                        v, d_nextQueueID[i])) {
+            if (i < nextQueueSize && d_nextQueue[i] == v &&
+                !updateIDTagList(d_IDTagList, IDTagSize, v, d_nextQueueID[i])) {
               IDTagListOverflow[0] = 1;
               return;
             }

@@ -4,7 +4,6 @@
 
 #include "fineman.cu"
 #include <cuda.h>
-#include <thrust/version.h>
 
 CUdevice cuDevice;
 CUcontext cuContext;
@@ -29,6 +28,11 @@ int main(int argc, char** argv) {
   Digraph G;
   int startVertex = atoi(argv[1]);
   readGraph(G, argc, argv);
+
+  if (G.adjacencyList.size() == 0) {
+    std::cout << "G has no elements.\n";
+    return 1;
+  }
 
   printf("Number of vertices %d\n", G.numVertices);
   printf("Number of edges %d\n\n", G.numEdges);

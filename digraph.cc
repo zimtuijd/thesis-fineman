@@ -2,8 +2,8 @@
 #include "digraph.h"
 
 void readGraph(Digraph &G, int argc, char **argv) {
-    int n;
-    int m;
+    int n = 0;
+    int m = 0;
 
     //If no arguments then read graph from stdin
     bool fromStdin = argc <= 2;

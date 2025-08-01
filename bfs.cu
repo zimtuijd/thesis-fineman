@@ -144,15 +144,13 @@ void initializeCudaBfsAug(std::vector<int> &startVertices, Digraph &G,
 
   // Init the ID tag list
   // G.numVertices * std::ceil(std::log(G.numVertices) entries in IDTagList
-
-  int numEntries = G.numVertices * IDTagSize;
-  std::vector<int> tempList(numEntries, -1);
+  std::vector<int> tempList(d_IDTagList.size(), -1);
   for (auto v : startVertices) {
     int temp = v * IDTagSize; 
     tempList[temp] = v;
   }
 
-  d_IDTagList = tempList;
+  thrust::copy(tempList.begin(), tempList.end(), d_IDTagList.begin());
 
 }
 
@@ -181,10 +179,10 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
   bool reachedEnd = true;
 
   while (queueSize) {
-      if (level >= maxLevel) {
+      /*if (level >= maxLevel) {
         reachedEnd = false;
         break;
-      }
+      }*/
 
       // next layer phase
       nextLayer<<<queueSize / 1024 + 1, 1024>>>
@@ -227,13 +225,13 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
       d_currentQueue.swap(d_nextQueue);
   }
 
+  if (!reachedEnd) {
+    printf("Did not reach end.\n");
+  }
 
   auto end = std::chrono::steady_clock::now();
   long duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
   printf("Elapsed time in milliseconds : %li ms.\n\n", duration);
-  if (!reachedEnd) {
-    printf("Did not reach end.\n");
-  }
   
   //std::cout << "\n" << level << " " << maxLevel << "\n";
 
@@ -285,7 +283,10 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
                       thrust::raw_pointer_cast(d_edgesSize.data()),
                       queueSize,
                       thrust::raw_pointer_cast(d_currentQueue.data()),
-                      thrust::raw_pointer_cast(d_degrees.data()));
+                      thrust::raw_pointer_cast(d_degrees.data()),
+                      thrust::raw_pointer_cast(d_IDTagList.data()),
+                      thrust::raw_pointer_cast(d_queueID.data()),
+                      IDTagSize);
       
       // Doing scan on degrees
       thrust::inclusive_scan(d_degrees.begin(), d_degrees.begin() + queueSize, d_degrees.begin());
@@ -306,7 +307,6 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
                     thrust::raw_pointer_cast(d_queueID.data()),
                     thrust::raw_pointer_cast(d_nextQueueID.data()),
                     IDTagSize);
-
 
       // Sorts values in d_nextQueue and d_nextQueueID
       // Sorts by vertex first, pivot ID second (so d_nextQueue first, d_nextQueueID second)
@@ -342,6 +342,7 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
       std::cout << "\n";
       thrust::for_each(d_nextQueueID.begin(), d_nextQueueID.end(), printf_functor());
       std::cout << "\n" << nextQueueSize;
+      std::cout << "\n" << IDTagSize;
       std::cout << "\n\n";*/
 
       level++;
@@ -355,10 +356,10 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
   printf("Elapsed time in milliseconds : %li ms.\n", duration);
 
   if (!reachedEnd) {
-    //printf("Did not reach end.\n");
+    printf("Did not reach end.\n");
   }
   if (IDTagListOverflow[0]) {
-    //printf("ID Tag list has overflow.\n");
+    printf("ID Tag list has overflow.\n");
   }
 
   // Returns true if there was no IDTagList overflow
