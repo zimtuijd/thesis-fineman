@@ -126,6 +126,22 @@ extern "C" {
   */
 
   __device__
+  bool inCurrentQueue(int v, int u_pivotID, int IDTagSize, int *d_IDTagListParent) {
+    
+    for (int tagIdx = IDTagSize * v; tagIdx < IDTagSize * v + IDTagSize; tagIdx++) {
+      if (d_IDTagListParent[tagIdx] == -1) {
+        d_IDTagListParent[tagIdx] = u_pivotID;
+        return false;
+      }
+      if (d_IDTagListParent[tagIdx] == u_pivotID) {
+        return true;
+      }
+    }
+    return false;
+  
+  }
+
+  __device__
   bool isVisitedByPivotID(int v, int u_pivotID, int IDTagSize, int *d_IDTagList) {
     
     for (int tagIdx = IDTagSize * v; tagIdx < IDTagSize * v + IDTagSize; tagIdx++) {
@@ -140,7 +156,7 @@ extern "C" {
     __global__
   void augCountDegrees(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize,
                        int queueSize, int *d_currentQueue, int *d_degrees,
-                       int* d_IDTagList, int* d_queueID, int IDTagSize) {
+                       int* d_IDTagList, int* d_queueID, int IDTagSize, int *d_IDTagListParent) {
       int thid = blockIdx.x * blockDim.x + threadIdx.x;
 
       if (thid < queueSize) {
@@ -149,8 +165,9 @@ extern "C" {
           int degree = 0;
           for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
               int v = d_adjacencyList[i];
-              if (v != u && !isVisitedByPivotID(v, u_pivotID, IDTagSize, d_IDTagList)) {
-                  ++degree;
+              if (v != u && !isVisitedByPivotID(v, u_pivotID, IDTagSize, d_IDTagList) &&
+                  !inCurrentQueue(v, u_pivotID, IDTagSize, d_IDTagListParent)) {
+                ++degree;
               }
           }
           d_degrees[thid] = degree;
@@ -193,7 +210,7 @@ extern "C" {
     // If found, pivot ID is included and returns true
     // If not found, returns false
     for (int i = v * IDTagSize; i < v * IDTagSize + IDTagSize; i++) {
-      if (d_IDTagList[i] == -1) {
+      if (d_IDTagList[i] == -1 || d_IDTagList[i] == v_pivotID) {
         d_IDTagList[i] = v_pivotID;
         return true;
       }

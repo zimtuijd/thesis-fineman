@@ -267,6 +267,7 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
 
   // Used as a flag by assignPivotID()
   thrust::device_vector<bool> IDTagListOverflow(1, false);
+  thrust::device_vector<int> d_IDTagListParent(d_IDTagList.size(), -1);
 
   while (queueSize) {
 
@@ -280,6 +281,8 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
         break;
       }
 
+      thrust::fill(d_IDTagListParent.begin(), d_IDTagListParent.end(), -1);
+
       // Counting degrees phase
       augCountDegrees<<<queueSize / 1024 + 1, 1024>>>
                       (thrust::raw_pointer_cast(d_adjacencyList.data()),
@@ -290,7 +293,8 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
                       thrust::raw_pointer_cast(d_degrees.data()),
                       thrust::raw_pointer_cast(d_IDTagList.data()),
                       thrust::raw_pointer_cast(d_queueID.data()),
-                      IDTagSize);
+                      IDTagSize,
+                      thrust::raw_pointer_cast(d_IDTagListParent.data()));
       
       // Doing scan on degrees
       thrust::inclusive_scan(d_degrees.begin(), d_degrees.begin() + queueSize, d_degrees.begin());
@@ -326,7 +330,7 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
         thrust::fill(iterUnique, iterSortLast, thrust::make_tuple(0, -1));
         nextQueueSize -= thrust::distance(iterUnique, iterSortLast);
       }
-
+      
       // Assigns pivot IDS to d_IDTagList
       assignPivotID<<<nextQueueSize / 1024 + 1, 1024>>>
                     (thrust::raw_pointer_cast(d_nextQueue.data()),
@@ -354,7 +358,7 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
       d_currentQueue.swap(d_nextQueue);
       d_queueID.swap(d_nextQueueID);
   }
-
+  
   auto end = std::chrono::steady_clock::now();
   long duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
   printf("Elapsed time in milliseconds : %li ms.\n", duration);
