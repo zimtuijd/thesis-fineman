@@ -10,6 +10,7 @@
 #include <cmath>
 #include <vector>
 #include <queue>
+#include <set>
 
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
@@ -21,6 +22,7 @@
 #include <thrust/iterator/zip_iterator.h>
 #include <thrust/tuple.h>
 #include <thrust/unique.h>
+#include <thrust/random/linear_congruential_engine.h>
 
 #include "bfs_kernels.cu"
 #include "digraph.h"
@@ -154,7 +156,8 @@ void initializeCudaBfsAug(std::vector<int> &startVertices, Digraph &G,
 
 }
 
-void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
+void runCudaBfs(int startVertex, Digraph &G, long &tempTimePBFS,
+                std::vector<int> &distance,
                 std::vector<int> &parent, int numVertices,
                 thrust::device_vector<int> &d_adjacencyList,
                 thrust::device_vector<int> &d_edgesOffset,
@@ -168,15 +171,15 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
   initializeCudaBfs(startVertex, distance, parent, G,
                     d_distance, d_parent, d_currentQueue);
 
-  //launch kernel
-  printf("Starting standard parallel bfs.\n");
-  auto start = std::chrono::steady_clock::now();
-
   int queueSize = 1;
   int nextQueueSize = 0;
   int level = 0;
   int maxLevel = std::ceil(std::pow(std::cbrt(numVertices), 2) * std::log(numVertices));
   bool reachedEnd = true;
+
+  //launch kernel
+  //printf("Starting standard parallel bfs.\n");
+  auto start = std::chrono::steady_clock::now();
 
   while (queueSize) {
       /*if (level >= maxLevel) {
@@ -232,16 +235,15 @@ void runCudaBfs(int startVertex, Digraph &G, std::vector<int> &distance,
   if (!reachedEnd) {
     printf("Did not reach end.\n");
   }
-  printf("Elapsed time in milliseconds : %li ms.\n\n", duration);
+  //printf("Elapsed time in milliseconds : %li ms.\n\n", duration);
+  tempTimePBFS += duration;
 
   thrust::copy(d_distance.begin(), d_distance.end(), distance.begin());
   thrust::copy(d_parent.begin(), d_parent.end(), parent.begin());
 
-  //std::cout << "\n" << level << " " << maxLevel << "\n";
-
 }
 
-bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
+bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G, long &tempTimeABFS,
                    int distance, int numVertices, int IDTagSize,
                    thrust::device_vector<int> &d_adjacencyList,
                    thrust::device_vector<int> &d_edgesOffset,
@@ -256,10 +258,6 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
   initializeCudaBfsAug(startVertices, G, d_currentQueue,
                        d_IDTagList, d_queueID, IDTagSize);
 
-  //launch kernel
-  printf("Starting augmented parallel bfs.\n");
-  auto start = std::chrono::steady_clock::now();
-
   int queueSize = startVertices.size();
   int nextQueueSize = 0;
   int level = 0;
@@ -268,6 +266,10 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
   // Used as a flag by assignPivotID()
   thrust::device_vector<bool> IDTagListOverflow(1, false);
   thrust::device_vector<int> d_IDTagListParent(d_IDTagList.size(), -1);
+
+  //launch kernel
+  //printf("Starting augmented parallel bfs.\n");
+  auto start = std::chrono::steady_clock::now();
 
   while (queueSize) {
 
@@ -330,7 +332,7 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
         thrust::fill(iterUnique, iterSortLast, thrust::make_tuple(0, -1));
         nextQueueSize -= thrust::distance(iterUnique, iterSortLast);
       }
-      
+
       // Assigns pivot IDS to d_IDTagList
       assignPivotID<<<nextQueueSize / 1024 + 1, 1024>>>
                     (thrust::raw_pointer_cast(d_nextQueue.data()),
@@ -361,7 +363,8 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
   
   auto end = std::chrono::steady_clock::now();
   long duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-  printf("Elapsed time in milliseconds : %li ms.\n", duration);
+  //printf("Elapsed time in milliseconds : %li ms.\n", duration);
+  tempTimeABFS = duration;
 
   if (!reachedEnd) {
     printf("Did not reach end.\n");
@@ -376,29 +379,49 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G,
 
 }
 
-void initDevVector(Digraph &G,
-                   thrust::device_vector<int> &d_adjacencyList,
-                   thrust::device_vector<int> &d_edgesOffset,
-                   thrust::device_vector<int> &d_edgesSize,
-                   thrust::device_vector<int> &d_distance,
-                   thrust::device_vector<int> &d_parent,
-                   thrust::device_vector<int> &d_currentQueue,
-                   thrust::device_vector<int> &d_nextQueue,
-                   thrust::device_vector<int> &d_degrees) {
+void initDevVectorPBFS(Digraph &G,
+                       thrust::device_vector<int> &d_adjacencyList,
+                       thrust::device_vector<int> &d_edgesSize,
+                       thrust::device_vector<int> &d_edgesOffset,
+                       thrust::device_vector<int> &d_currentQueue,
+                       thrust::device_vector<int> &d_nextQueue,
+                       thrust::device_vector<int> &d_degrees) {
 
   d_adjacencyList = G.adjacencyList;
-  d_edgesOffset = G.edgesOffset;
   d_edgesSize = G.edgesSize;
-  thrust::fill(d_distance.begin(), d_distance.end(), 0);
-  thrust::fill(d_parent.begin(), d_parent.end(), 0);
+  d_edgesOffset = G.edgesOffset;
   thrust::fill(d_currentQueue.begin(), d_currentQueue.end(), 0);
   thrust::fill(d_nextQueue.begin(), d_nextQueue.end(), 0);
   thrust::fill(d_degrees.begin(), d_degrees.end(), 0);
 
 }
 
+void initDevVectorABFS(Digraph &G,
+                       thrust::device_vector<int> &d_adjacencyList,
+                       thrust::device_vector<int> &d_edgesSize,
+                       thrust::device_vector<int> &d_edgesOffset,
+                       thrust::device_vector<int> &d_currentQueue,
+                       thrust::device_vector<int> &d_nextQueue,
+                       thrust::device_vector<int> &d_degrees,
+                       thrust::device_vector<int> &d_IDTagList,
+                       thrust::device_vector<int> &d_queueID,
+                       thrust::device_vector<int> &d_nextQueueID) {
+
+  d_adjacencyList = G.adjacencyList;
+  d_edgesOffset = G.edgesOffset;
+  d_edgesSize = G.edgesSize;
+  thrust::fill(d_currentQueue.begin(), d_currentQueue.end(), 0);
+  thrust::fill(d_nextQueue.begin(), d_nextQueue.end(), 0);
+  thrust::fill(d_degrees.begin(), d_degrees.end(), 0);
+  thrust::fill(d_IDTagList.begin(), d_IDTagList.end(), -1);
+  thrust::fill(d_queueID.begin(), d_queueID.end(), -1);
+  thrust::fill(d_nextQueueID.begin(), d_nextQueueID.end(), -1);
+
+}
+
 void startBFS(Digraph &G, int startVertex) {
 
+  long temp = 0; // placeholder for time variable
   std::vector<int> distance(G.numVertices, std::numeric_limits<int>::max());
   std::vector<int> parent(G.numVertices, std::numeric_limits<int>::max());
 
@@ -413,7 +436,7 @@ void startBFS(Digraph &G, int startVertex) {
   thrust::device_vector<int> d_degrees(G.numVertices, 0);
 
   // normal BFS
-  runCudaBfs(startVertex, G, distance, parent, G.numVertices,
+  runCudaBfs(startVertex, G, temp, distance, parent, G.numVertices,
              d_adjacencyList, d_edgesOffset, d_edgesSize, d_distance,
              d_parent, d_currentQueue, d_nextQueue, d_degrees);
 
@@ -431,13 +454,14 @@ bool startAugBFS(Digraph &G, std::vector<int> &startVertices, int dist,
   thrust::device_vector<int> d_nextQueue(G.numVertices, 0);
   thrust::device_vector<int> d_degrees(G.numVertices, 0);
 
+  long temp = 0; // placeholder for time variable
   int IDTagSize = std::ceil(std::log(G.numVertices));
   thrust::device_vector<int> d_IDTagList(G.numVertices * IDTagSize);
   thrust::device_vector<int> d_queueID(G.numVertices, -1);
   thrust::device_vector<int> d_nextQueueID(G.numVertices, -1);
 
   // augmented BFS
-  if (!runCudaBfsAug(startVertices, G, dist, G.numVertices, IDTagSize,
+  if (!runCudaBfsAug(startVertices, G, temp, dist, G.numVertices, IDTagSize,
                     d_adjacencyList, d_edgesOffset, d_edgesSize,
                     d_currentQueue, d_nextQueue, d_degrees,
                     d_IDTagList, d_queueID, d_nextQueueID)) {
@@ -464,6 +488,27 @@ int testBFS(Digraph &G, int startVertex,
   std::vector<bool> visited(G.numVertices, false);
   runSeqBFS(startVertex, G, distance, parent, visited);
 
+  int dD = -1; // -1 means no distance bound
+  int IDTagSize = std::ceil(std::log(G.numVertices));
+
+  long avgTimePBFS = 0;
+  long avgTimeABFS = 0;
+  long tempTimePBFS = 0;
+  long tempTimeABFS = 0;
+  size_t epochs = 100;
+  size_t startVerticesSize = IDTagSize - 1;
+  std::set<int> svSet;
+  thrust::minstd_rand svRNG;
+  while (svSet.size() <= startVerticesSize) {
+    svSet.insert(svRNG() % G.numVertices);
+  }
+  std::vector<int> startVertices(svSet.begin(), svSet.end());
+
+  std::cout << "Experiment with multiple start vertices.\n";
+  std::cout << "Amount of epochs: " << epochs << "\n";
+  std::cout << "Amount of start vertices: " << startVerticesSize << "\n\n";
+  std::cout << "normal PBFS - augmented PBFS\n";
+
   // distance and parent for parallel BFS
   std::vector<int> distanceP(G.numVertices, std::numeric_limits<int>::max());
   std::vector<int> parentP(G.numVertices, std::numeric_limits<int>::max());
@@ -478,30 +523,51 @@ int testBFS(Digraph &G, int startVertex,
   thrust::device_vector<int> d_nextQueue(G.numVertices, 0);
   thrust::device_vector<int> d_degrees(G.numVertices, 0);
 
-  // normal parallel BFS
-  runCudaBfs(startVertex, G, distanceP, parentP, G.numVertices,
-             d_adjacencyList, d_edgesOffset, d_edgesSize, d_distance,
-             d_parent, d_currentQueue, d_nextQueue, d_degrees);
-
-  checkOutput(distanceP, distance, G);
-
-  int dD = -1; // -1 means no distance bound
-  std::vector<int> startVertices = {startVertex};
-  int IDTagSize = std::ceil(std::log(G.numVertices));
   thrust::device_vector<int> d_IDTagList(G.numVertices * IDTagSize);
   thrust::device_vector<int> d_queueID(G.numVertices, -1);
   thrust::device_vector<int> d_nextQueueID(G.numVertices, -1);
 
-  initDevVector(G, d_adjacencyList, d_edgesOffset, d_edgesSize, d_distance,
+  for (size_t e = 0; e < epochs; e++) {
+  
+    // Run parallel BFS k times for each start vertex
+    for (auto v : startVertices) {
+    
+      initDevVectorPBFS(G, d_adjacencyList, d_edgesSize, d_edgesOffset,
+                        d_currentQueue, d_nextQueue, d_degrees);
+
+      // normal parallel BFS
+      runCudaBfs(v, G, tempTimePBFS, distanceP, parentP, G.numVertices,
+                d_adjacencyList, d_edgesOffset, d_edgesSize, d_distance,
                 d_parent, d_currentQueue, d_nextQueue, d_degrees);
 
-  // augmented parallel BFS
-  if (!runCudaBfsAug(startVertices, G, dD, G.numVertices, IDTagSize,
-                    d_adjacencyList, d_edgesOffset, d_edgesSize,
-                    d_currentQueue, d_nextQueue, d_degrees,
-                    d_IDTagList, d_queueID, d_nextQueueID)) {
-    //std::cout << "Augmented BFS returned false.\n";
-  } 
+    }
+
+    initDevVectorABFS(G, d_adjacencyList, d_edgesSize, d_edgesOffset, d_currentQueue,
+                      d_nextQueue, d_degrees, d_IDTagList, d_queueID, d_nextQueueID);
+
+    // augmented parallel BFS
+    if (!runCudaBfsAug(startVertices, G, tempTimeABFS, dD, G.numVertices, IDTagSize,
+                      d_adjacencyList, d_edgesOffset, d_edgesSize,
+                      d_currentQueue, d_nextQueue, d_degrees,
+                      d_IDTagList, d_queueID, d_nextQueueID)) {
+      //std::cout << "Augmented BFS returned false.\n";
+    } 
+
+    std::cout << tempTimePBFS << "  " << tempTimeABFS << "\n";
+    avgTimePBFS += tempTimePBFS;
+    avgTimeABFS += tempTimeABFS;
+    tempTimePBFS = 0;
+    tempTimeABFS = 0;
+
+  }
+
+  avgTimePBFS /= epochs;
+  avgTimeABFS /= epochs;
+
+  std::cout << "\n\nAmount of epochs: " << epochs << "\n";
+  std::cout << "Amount of start vertices: " << startVerticesSize << "\n\n";
+  std::cout << "Average time normal parallel BFS: " << avgTimePBFS << "ms\n";
+  std::cout << "Average time augmented parallel BFS: " << avgTimeABFS << "ms\n";
 
   return 0;
 
