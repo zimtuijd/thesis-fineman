@@ -174,10 +174,24 @@ extern "C" {
       }
   }
 
+  __device__
+  bool inCurrentQueueParent(int v, int u_pivotID, int IDTagSize, int *d_IDTagListParent) {
+    
+    for (int tagIdx = IDTagSize * v; tagIdx < IDTagSize * v + IDTagSize; tagIdx++) {
+      if (d_IDTagListParent[tagIdx] == u_pivotID) {
+        d_IDTagListParent[tagIdx] = -1;
+        return true;
+      }
+    }
+    return false;
+  
+  }
+
   __global__
   void augAssignVNQ(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int queueSize,
                     int *d_currentQueue, int *d_nextQueue, int *d_degrees, int nextQueueSize,
-                    int* d_IDTagList, int* d_queueID, int* d_nextQueueID, int IDTagSize) {
+                    int *d_IDTagList, int *d_queueID, int *d_nextQueueID, int IDTagSize,
+                    int *d_IDTagListParent) {
       int thid = blockIdx.x * blockDim.x + threadIdx.x;
 
       if (thid < queueSize) {
@@ -193,11 +207,12 @@ extern "C" {
               int v = d_adjacencyList[i];
               // scan through d_IDTagList to check if node has been reached by pivot ID 
               // if already visited by pivot id, do not add to queue
-              if (v != u && !isVisitedByPivotID(v, u_pivotID, IDTagSize, d_IDTagList)) {
-                  int nextQueuePlace = sum + counter;
-                  d_nextQueue[nextQueuePlace] = v;
-                  d_nextQueueID[nextQueuePlace] = u_pivotID; // adds corresponding pivot ID to next queue
-                  counter++;
+              if (v != u && !isVisitedByPivotID(v, u_pivotID, IDTagSize, d_IDTagList) &&
+                  inCurrentQueueParent(v, u_pivotID, IDTagSize, d_IDTagListParent)) {
+                int nextQueuePlace = sum + counter;
+                d_nextQueue[nextQueuePlace] = v;
+                d_nextQueueID[nextQueuePlace] = u_pivotID; // adds corresponding pivot ID to next queue
+                counter++;
               }
           }
       }

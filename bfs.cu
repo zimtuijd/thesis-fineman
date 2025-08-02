@@ -283,7 +283,7 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G, long &tempTimeABF
         break;
       }
 
-      thrust::fill(d_IDTagListParent.begin(), d_IDTagListParent.end(), -1);
+      //thrust::fill(d_IDTagListParent.begin(), d_IDTagListParent.end(), -1);
 
       // Counting degrees phase
       augCountDegrees<<<queueSize / 1024 + 1, 1024>>>
@@ -316,7 +316,8 @@ bool runCudaBfsAug(std::vector<int> startVertices, Digraph &G, long &tempTimeABF
                     thrust::raw_pointer_cast(d_IDTagList.data()),
                     thrust::raw_pointer_cast(d_queueID.data()),
                     thrust::raw_pointer_cast(d_nextQueueID.data()),
-                    IDTagSize);
+                    IDTagSize,
+                    thrust::raw_pointer_cast(d_IDTagListParent.data()));
 
       // Sorts values in d_nextQueue and d_nextQueueID
       // Sorts by vertex first, pivot ID second (so d_nextQueue first, d_nextQueueID second)
@@ -519,13 +520,13 @@ int testBFS(Digraph &G, int startVertex,
   thrust::device_vector<int> d_edgesSize(G.edgesSize);
   thrust::device_vector<int> d_distance(G.numVertices, 0);
   thrust::device_vector<int> d_parent(G.numVertices, 0);
-  thrust::device_vector<int> d_currentQueue(G.numVertices, 0);
-  thrust::device_vector<int> d_nextQueue(G.numVertices, 0);
-  thrust::device_vector<int> d_degrees(G.numVertices, 0);
+  thrust::device_vector<int> d_currentQueue(G.numVertices * IDTagSize, 0);
+  thrust::device_vector<int> d_nextQueue(G.numVertices * IDTagSize, 0);
+  thrust::device_vector<int> d_degrees(G.numVertices * IDTagSize, 0);
 
   thrust::device_vector<int> d_IDTagList(G.numVertices * IDTagSize);
-  thrust::device_vector<int> d_queueID(G.numVertices, -1);
-  thrust::device_vector<int> d_nextQueueID(G.numVertices, -1);
+  thrust::device_vector<int> d_queueID(G.numVertices * IDTagSize, -1);
+  thrust::device_vector<int> d_nextQueueID(G.numVertices * IDTagSize, -1);
 
   for (size_t e = 0; e < epochs; e++) {
   
