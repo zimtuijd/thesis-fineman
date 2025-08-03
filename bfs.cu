@@ -160,7 +160,7 @@ void checkIDTagList(std::vector<std::vector<int>> &distanceVectors,
     }
     svCount++;
   }
-  std::cout << "Output OK\n";
+  std::cout << "Output OK!\n";
 
 }
 
@@ -583,7 +583,7 @@ int testBFS(Digraph &G, int startVertex,
   long tempTimePBFS = 0;
   long tempTimeABFS = 0;
   size_t epochs = 100;
-  size_t startVerticesSize = IDTagSize - 1;
+  size_t startVerticesSize = IDTagSize;
   std::set<int> svSet;
   thrust::minstd_rand svRNG;
 
@@ -618,7 +618,7 @@ int testBFS(Digraph &G, int startVertex,
   
     // Generate new start vertices
     svSet.clear();
-    while (svSet.size() <= startVerticesSize) {
+    while (svSet.size() < startVerticesSize) {
       svSet.insert(svRNG() % G.numVertices);
     }
     std::vector<int> startVertices(svSet.begin(), svSet.end());
@@ -681,7 +681,8 @@ int testBFS(Digraph &G, int startVertex,
 int testBFSVal(Digraph &G, int startVertex) {
 
   int IDTagSize = std::ceil(std::log(G.numVertices));
-  std::vector<int> startVertices = {1,2,3,4,5};
+  std::cout << IDTagSize << "\n";
+  std::vector<int> startVertices = {1,2,3,4};
 
   // distance and parent for parallel BFS
   std::vector<std::vector<int>> distanceVectors;
