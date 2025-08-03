@@ -43,7 +43,10 @@ int main(int argc, char** argv) {
 
   initCuda(G);
 
-  // runs the bfs implementations
+  // bfs implementations validation
+  //testBFSVal(G, startVertex);
+
+  // bfs implementations experiment
   testBFS(G, startVertex, distance, parent);
 
   //startFineman(G);
