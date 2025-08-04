@@ -97,12 +97,7 @@ extern "C" {
       int thid = blockIdx.x * blockDim.x + threadIdx.x;
 
       if (thid < queueSize) {
-          /*__shared__ int sharedIncrement;
-          if (!threadIdx.x) {
-              sharedIncrement = incrDegrees[thid >> 10];
-          }
-          __syncthreads();
-          */
+
           int sum = 0;
           if (thid > 0) {
               sum = d_degrees[thid - 1];
@@ -113,7 +108,7 @@ extern "C" {
           for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
               int v = d_adjacencyList[i];
               if (d_parent[v] == i && v != u) {
-                  int nextQueuePlace = sum + counter; // no sharedIncrement
+                  int nextQueuePlace = sum + counter;
                   d_nextQueue[nextQueuePlace] = v;
                   counter++;
               }
@@ -147,6 +142,9 @@ extern "C" {
           int u = d_currentQueue[thid];
           int u_pivotID = d_queueID[thid]; // current node's pivot ID
           int degree = 0;
+
+          // Counts the total degrees of vertex u
+          // Excludes itself and vertices already visited by u_pivotID
           for (int i = d_edgesOffset[u]; i < d_edgesOffset[u] + d_edgesSize[u]; i++) {
               int v = d_adjacencyList[i];
               if (v != u && !isVisitedByPivotID(v, u_pivotID, IDTagSize, d_IDTagList)) {
@@ -200,7 +198,7 @@ extern "C" {
           int v = d_nextQueue[thid];
           
           // Check next log(n) places in d_nextQueue for vertex v
-          // Add pivot ID to d_IDTagList, if index i in d_nextQueue matches v
+          // If vertex i in d_nextQueue matches v, assign index for i in ID tag list
           for (int i = thid; i < thid + IDTagSize; i++) {
             if (i < nextQueueSize && d_nextQueue[i] == v) {
               d_IDTagCount[v] += 1;
@@ -230,6 +228,7 @@ extern "C" {
         int u_pivotID = d_nextQueueID[thid];
         int IDTagLoc = u * IDTagSize + d_nextQueueIDListNum[thid];
 
+        // Add pivot ID to tag list and corresponding distance
         d_IDTagList[IDTagLoc] = u_pivotID;
         if (level + 1 < d_augDistance[IDTagLoc]) {
           d_augDistance[IDTagLoc] = level + 1;

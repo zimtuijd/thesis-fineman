@@ -27,23 +27,11 @@
 #include "bfs_kernels.cu"
 #include "digraph.h"
 
-void printeach(thrust::device_vector<int> in) {
-
-  for (size_t i = 0; i < in.size(); i++) {
-    std::cout << in[i] << " ";
-  }
-  std::cout << "\n";
-
-}
-
 struct printf_functor
 {
   __host__ __device__
   void operator()(int x)
   {
-    // note that using printf in a __device__ function requires
-    // code compiled for a GPU with compute capability 2.0 or
-    // higher (nvcc --arch=sm_20)
     printf("%d ", x);
   }
 };
@@ -147,10 +135,6 @@ void checkIDTagList(std::vector<std::vector<int>> &distanceVectors,
       }
       augDistanceVertex.push_back(temp);
     }
-    /*for (auto hoi : augDistanceVertex) {
-      std::cout << hoi << " ";
-    }
-    std::cout << "\n";*/
     for (size_t j = 0; j < augDistanceVertex.size(); j++) {
       if (augDistanceVertex[j] != distanceVectors[svCount][j]) {
         std::cout << j << " " << distanceVectors[svCount][j] << " " << augDistanceVertex[j] << "\n";
@@ -528,20 +512,19 @@ void startBFS(Digraph &G, int startVertex) {
 bool startAugBFS(Digraph &G, std::vector<int> &startVertices, int dist,
                  thrust::device_vector<int> &d_IDTagVertices) {
 
+  int IDTagSize = std::ceil(std::log(G.numVertices));
+  long temp = 0; // placeholder for time variable
+
   thrust::device_vector<int> d_adjacencyList(G.adjacencyList);
   thrust::device_vector<int> d_edgesOffset(G.edgesOffset);
   thrust::device_vector<int> d_edgesSize(G.edgesSize);
-  thrust::device_vector<int> d_distance(G.numVertices, 0);
-  thrust::device_vector<int> d_parent(G.numVertices, 0);
-  thrust::device_vector<int> d_currentQueue(G.numVertices, 0);
-  thrust::device_vector<int> d_nextQueue(G.numVertices, 0);
-  thrust::device_vector<int> d_degrees(G.numVertices, 0);
+  thrust::device_vector<int> d_currentQueue(G.numVertices * IDTagSize, 0);
+  thrust::device_vector<int> d_nextQueue(G.numVertices * IDTagSize, 0);
+  thrust::device_vector<int> d_degrees(G.numVertices * IDTagSize, 0);
 
-  long temp = 0; // placeholder for time variable
-  int IDTagSize = std::ceil(std::log(G.numVertices));
   thrust::device_vector<int> d_IDTagList(G.numVertices * IDTagSize);
-  thrust::device_vector<int> d_queueID(G.numVertices, -1);
-  thrust::device_vector<int> d_nextQueueID(G.numVertices, -1);
+  thrust::device_vector<int> d_queueID(G.numVertices * IDTagSize, -1);
+  thrust::device_vector<int> d_nextQueueID(G.numVertices * IDTagSize, -1);
   thrust::device_vector<int> d_augDistance(G.numVertices * IDTagSize, 0);
   thrust::device_vector<int> d_IDTagCount(G.numVertices, 0);
   thrust::device_vector<int> d_nextQueueIDListNum(d_nextQueue.size(), -1);
@@ -568,6 +551,7 @@ bool startAugBFS(Digraph &G, std::vector<int> &startVertices, int dist,
 
 }
 
+// Used for experiment
 int testBFS(Digraph &G, int startVertex,
              std::vector<int> &distance, std::vector<int> &parent) {
 
