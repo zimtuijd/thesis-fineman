@@ -66,10 +66,10 @@ bool parSC(Digraph &G, int maxLevel, float eps_pi,
     int dist = min_d;
 
     // TODO: variant of G for back search
-    if (!startAugBFS(G, partitionVertices, dist, d_coreForward) &&
-        !startAugBFS(G, partitionVertices, dist, d_coreBack) &&
-        !startAugBFS(G, partitionVertices, dist + 1, d_fringeForward) &&
-        !startAugBFS(G, partitionVertices, dist + 1, d_fringeBack)) {
+    if (!startModBFS(G, partitionVertices, dist, d_coreForward) &&
+        !startModBFS(G, partitionVertices, dist, d_coreBack) &&
+        !startModBFS(G, partitionVertices, dist + 1, d_fringeForward) &&
+        !startModBFS(G, partitionVertices, dist + 1, d_fringeBack)) {
       return false;
     }
 

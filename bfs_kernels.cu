@@ -117,7 +117,7 @@ extern "C" {
   }
 
   /*************************************************************
-   * Augmented BFS
+   * Modified BFS
   */
 
   __device__
@@ -133,7 +133,7 @@ extern "C" {
   }
 
   __global__
-  void augCountDegrees(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize,
+  void modCountDegrees(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize,
                        int queueSize, int *d_currentQueue, int *d_degrees,
                        int* d_IDTagList, int* d_queueID, int IDTagSize) {
       int thid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -156,7 +156,7 @@ extern "C" {
   }
 
   __global__
-  void augAssignVNQ(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int queueSize,
+  void modAssignVNQ(int *d_adjacencyList, int *d_edgesOffset, int *d_edgesSize, int queueSize,
                     int *d_currentQueue, int *d_nextQueue, int *d_degrees, int nextQueueSize,
                     int *d_IDTagList, int *d_queueID, int *d_nextQueueID, int IDTagSize) {
       int thid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -218,7 +218,7 @@ extern "C" {
   void assignPivotID(int *d_nextQueue, int *d_nextQueueID, int *d_IDTagList,
                      int nextQueueSize, int IDTagSize,
                      int *d_IDTagCount, int *d_nextQueueIDListNum,
-                     int *d_augDistance, int level) {
+                     int *d_modDistance, int level) {
       
       int thid = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -230,8 +230,8 @@ extern "C" {
 
         // Add pivot ID to tag list and corresponding distance
         d_IDTagList[IDTagLoc] = u_pivotID;
-        if (level + 1 < d_augDistance[IDTagLoc]) {
-          d_augDistance[IDTagLoc] = level + 1;
+        if (level + 1 < d_modDistance[IDTagLoc]) {
+          d_modDistance[IDTagLoc] = level + 1;
         }
 
       }
