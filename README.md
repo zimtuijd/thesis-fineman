@@ -9,4 +9,4 @@ Here is the link to the original code: https://github.com/rafalk342/bfs-cuda
 To run the experiment from the thesis using a .mtx file, do the following:
 1. meson setup build --buildtype=release
 2. meson compile -C build
-3. mtx.py [path to .mtx file] | ./build/main 0
+3. python3 mtx.py [path to .mtx file] | ./build/main 0
